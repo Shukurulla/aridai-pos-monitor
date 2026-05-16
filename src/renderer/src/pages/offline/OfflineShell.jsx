@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { T, fmt } from '../../lib/theme'
 import aridaiLogo from '../../assets/aridai-logo.png'
 import Numpad from '../../components/Numpad'
+import ZoomControl from '../../components/ZoomControl'
 import OrdersPage from './OrdersPage'
 import MenuPage from './MenuPage'
 import SaboyPage from './SaboyPage'
@@ -246,6 +247,7 @@ export default function OfflineShell({ auth, onLogout }) {
       </div>
 
       <Numpad open={numpadOpen} onClose={() => setNumpadOpen(false)} />
+      <ZoomControl />
     </div>
   )
 }

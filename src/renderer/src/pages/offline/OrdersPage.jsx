@@ -55,6 +55,7 @@ export default function OrdersPage({ auth }) {
         onBack={() => setView({ name: 'list' })}
         onAdd={() => setView({ name: 'add', orderId: currentOrder._id, order: currentOrder })}
         onPay={() => setView({ name: 'pay', orderId: currentOrder._id, order: currentOrder })}
+        onCheck={() => printCheck(currentOrder)}
         onCancelled={() => {
           setView({ name: 'list' })
           load()
@@ -99,6 +100,35 @@ export default function OrdersPage({ auth }) {
     paid: orders.filter(isPaid).length,
     cancelled: orders.filter((o) => o.status === 'cancelled').length,
     all: orders.length,
+  }
+
+  const printCheck = async (order) => {
+    if (!order) return
+    const its = activeItems(order)
+    const itemsTotal = its.reduce((s, i) => s + (i.price || 0) * (i.quantity || 1), 0)
+    const hourlyCharge = order.hourlyCharge || 0
+    const payload = {
+      printerName: '',
+      restaurantName: auth?.restaurantName || auth?.restaurant?.name || '',
+      tableName:
+        order.orderType === 'saboy' ? 'Сабой' : order.tableName || `Заказ #${order.orderNumber || ''}`,
+      waiterName: order.waiterName || '',
+      items: its.map((i) => ({ foodName: i.foodName, quantity: i.quantity || 1, price: i.price || 0 })),
+      itemsTotal,
+      serviceFee: 0,
+      hourlyCharge,
+      hourlyHours: order.hourlyHours || 0,
+      totalPrice: itemsTotal + hourlyCharge,
+      discount: 0
+    }
+    try {
+      const res = await window.pos.hub.request('POST', '/print/payment', payload)
+      const ok = !!(res && res.success && (!res.data || res.data.success !== false))
+      if (!ok)
+        alert('Ошибка печати чека: ' + ((res && (res.error || res.data?.error)) || 'нет связи с сервером'))
+    } catch (e) {
+      alert('Ошибка печати чека: ' + (e?.message || e))
+    }
   }
 
   return (
@@ -164,6 +194,7 @@ export default function OrdersPage({ auth }) {
               onOpen={() => setView({ name: 'detail', orderId: o._id, order: o })}
               onAdd={() => setView({ name: 'add', orderId: o._id, order: o })}
               onPay={() => setView({ name: 'pay', orderId: o._id, order: o })}
+              onCheck={() => printCheck(o)}
             />
           ))}
         </div>
@@ -179,7 +210,7 @@ function orderTotal(order) {
   return activeItems(order).reduce((s, i) => s + (i.price || 0) * (i.quantity || 1), 0)
 }
 
-function OrderCard({ order, onOpen, onAdd, onPay }) {
+function OrderCard({ order, onOpen, onAdd, onPay, onCheck }) {
   const s = STATUS[order.status] || STATUS.pending
   const items = activeItems(order)
   const total = orderTotal(order)
@@ -234,6 +265,16 @@ function OrderCard({ order, onOpen, onAdd, onPay }) {
         </span>
       </div>
 
+      <button
+        onClick={(e) => {
+          e.stopPropagation()
+          onCheck()
+        }}
+        style={{ ...secBtn, width: '100%', borderRight: 'none' }}
+      >
+        🖨 Чек
+      </button>
+
       {!paid && order.status !== 'cancelled' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: 0 }}>
           <button
@@ -261,7 +302,7 @@ function OrderCard({ order, onOpen, onAdd, onPay }) {
 }
 
 // ───────────────── Order detail ─────────────────
-function OrderDetail({ order, onBack, onAdd, onPay, onCancelled }) {
+function OrderDetail({ order, onBack, onAdd, onPay, onCheck, onCancelled }) {
   const items = order.items || []
   const total = orderTotal(order)
   const paid = order.isPaid || order.status === 'paid'
@@ -361,16 +402,21 @@ function OrderDetail({ order, onBack, onAdd, onPay, onCancelled }) {
           </div>
         </div>
       </div>
-      {!paid && order.status !== 'cancelled' && (
-        <div style={{ display: 'flex', gap: 12, padding: 18, borderTop: `1px solid ${T.border}`, background: T.surface }}>
-          <button onClick={onAdd} style={{ ...secBtn, flex: 1, height: 64, border: `2px solid ${T.borderStrong}` }}>
-            + Блюдо
-          </button>
-          <button onClick={onPay} style={{ ...payBtn, flex: 2, height: 64 }}>
-            ОПЛАТА · {fmt(total)}
-          </button>
-        </div>
-      )}
+      <div style={{ display: 'flex', gap: 12, padding: 18, borderTop: `1px solid ${T.border}`, background: T.surface }}>
+        <button onClick={onCheck} style={{ ...secBtn, flex: 1, height: 64, border: `2px solid ${T.borderStrong}` }}>
+          🖨 Чек
+        </button>
+        {!paid && order.status !== 'cancelled' && (
+          <>
+            <button onClick={onAdd} style={{ ...secBtn, flex: 1, height: 64, border: `2px solid ${T.borderStrong}` }}>
+              + Блюдо
+            </button>
+            <button onClick={onPay} style={{ ...payBtn, flex: 2, height: 64 }}>
+              ОПЛАТА · {fmt(total)}
+            </button>
+          </>
+        )}
+      </div>
 
       {modal && (
         <div

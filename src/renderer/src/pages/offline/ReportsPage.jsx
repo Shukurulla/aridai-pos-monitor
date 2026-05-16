@@ -1,10 +1,11 @@
 import { useEffect, useState, useMemo } from 'react'
 import { T, fmt } from '../../lib/theme'
 
-export default function ReportsPage() {
+export default function ReportsPage({ auth }) {
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('revenue')
+  const [printing, setPrinting] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -87,6 +88,86 @@ export default function ReportsPage() {
     { id: 'cancelled', label: 'Отменённые' }
   ]
 
+  const doPrint = async () => {
+    if (printing) return
+    setPrinting(true)
+    const header = {
+      restaurantName: auth?.restaurantName || auth?.restaurant?.name || '',
+      date: new Date().toLocaleDateString('ru-RU'),
+      title:
+        tab === 'revenue'
+          ? 'ОБЩАЯ ВЫРУЧКА'
+          : tab === 'waiters'
+            ? 'ПО ОФИЦИАНТАМ'
+            : tab === 'foods'
+              ? 'ПРОДАННЫЕ БЛЮДА'
+              : 'ОТМЕНЁННЫЕ'
+    }
+    const payload = { printerName: '', currency: '₸', header }
+    let path = ''
+    if (tab === 'revenue') {
+      path = '/print/revenue'
+      payload.sections = [
+        {
+          title: 'СПОСОБЫ ОПЛАТЫ',
+          rows: [
+            { label: 'Наличные', amount: r.byType.cash },
+            { label: 'Карта', amount: r.byType.card },
+            { label: 'Перевод', amount: r.byType.click }
+          ]
+        },
+        {
+          title: 'ИТОГИ',
+          rows: [
+            { label: 'Кол-во чеков', value: String(r.checks) },
+            { label: 'Средний чек', amount: r.avg }
+          ]
+        }
+      ]
+      payload.grandTotal = r.totalRevenue
+    } else if (tab === 'waiters') {
+      path = '/print/waiters'
+      payload.waiters = r.waiters.map((w) => ({
+        name: w.name,
+        ordersCount: w.orders,
+        totalRevenue: w.revenue
+      }))
+      payload.grandTotal = r.totalRevenue
+    } else if (tab === 'foods') {
+      path = '/print/sold-foods'
+      const subtotal = r.foods.reduce((s, f) => s + f.revenue, 0)
+      payload.categories = [
+        {
+          name: '',
+          items: r.foods.map((f) => ({ name: f.name, qty: f.qty, price: 0, total: f.revenue })),
+          subtotal
+        }
+      ]
+      payload.grandTotal = subtotal
+    } else {
+      path = '/print/cancelled'
+      payload.items = r.cancelled.map((c) => ({
+        time: '',
+        tableName: `#${c.orderNumber || ''}`,
+        foodName: c.name,
+        qty: c.qty,
+        total: c.total,
+        reason: ''
+      }))
+      payload.totalCount = r.cancelled.length
+      payload.grandTotal = r.cancelledTotal
+    }
+    try {
+      const res = await window.pos.hub.request('POST', path, payload)
+      const ok = !!(res && res.success && (!res.data || res.data.success !== false))
+      if (!ok) alert('Ошибка печати: ' + ((res && (res.error || res.data?.error)) || 'нет связи с сервером'))
+    } catch (e) {
+      alert('Ошибка печати: ' + (e?.message || e))
+    } finally {
+      setPrinting(false)
+    }
+  }
+
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <div
@@ -95,13 +176,31 @@ export default function ReportsPage() {
           borderBottom: `1px solid ${T.border}`,
           padding: '14px 24px',
           display: 'flex',
-          alignItems: 'baseline',
+          alignItems: 'center',
           gap: 14,
           flexShrink: 0
         }}
       >
         <span style={{ fontSize: 24, fontWeight: 900 }}>Отчёты смены</span>
         <span style={{ fontSize: 14, color: T.textMuted }}>Локальный расчёт (офлайн)</span>
+        <div style={{ flex: 1 }} />
+        <button
+          onClick={doPrint}
+          disabled={printing || loading}
+          style={{
+            height: 48,
+            padding: '0 24px',
+            background: printing ? T.panelStrong : T.cta,
+            color: '#fff',
+            border: 'none',
+            fontFamily: T.font,
+            fontSize: 16,
+            fontWeight: 800,
+            cursor: printing ? 'not-allowed' : 'pointer'
+          }}
+        >
+          {printing ? 'Печать…' : '🖨 Распечатать'}
+        </button>
       </div>
 
       <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '220px 1fr', minHeight: 0 }}>
