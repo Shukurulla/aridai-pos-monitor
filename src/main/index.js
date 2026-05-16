@@ -15,7 +15,8 @@ function createWindow() {
     minHeight: 700,
     title: 'AridaiPOS Monitor',
     backgroundColor: '#f4f2ed',
-    fullscreen: true, // POS ekranda to'liq ochiladi
+    // Весь экран по рабочей области, но БЕЗ kiosk — панель задач остаётся видимой
+    fullscreen: false,
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
@@ -25,6 +26,7 @@ function createWindow() {
       webviewTag: true // <webview> ishlatilishi uchun
     }
   })
+  mainWindow.maximize()
 
   const indexFile = path.join(__dirname, '../renderer/index.html')
   const devUrl = process.env.ELECTRON_RENDERER_URL

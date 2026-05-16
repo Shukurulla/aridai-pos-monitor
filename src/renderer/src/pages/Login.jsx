@@ -8,6 +8,7 @@ export default function Login({ onSuccess }) {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [activeField, setActiveField] = useState('phone')
 
   const formatPhone = (raw) => {
     const digits = raw.replace(/\D/g, '').slice(0, 11)
@@ -20,6 +21,20 @@ export default function Login({ onSuccess }) {
     if (d.length > 6) out += ' ' + d.slice(6, 8)
     if (d.length > 8) out += ' ' + d.slice(8, 10)
     return out
+  }
+
+  const pressKey = (k) => {
+    if (loading) return
+    if (activeField === 'password') {
+      setPassword((prev) => (k === 'clear' ? '' : k === 'back' ? prev.slice(0, -1) : prev + k))
+      return
+    }
+    setPhone((prev) => {
+      const digits = prev.replace(/\D/g, '')
+      if (k === 'clear') return '+7'
+      if (k === 'back') return formatPhone(digits.slice(0, -1)) || '+7'
+      return formatPhone(digits + k)
+    })
   }
 
   const handleSubmit = async (e) => {
@@ -46,7 +61,9 @@ export default function Login({ onSuccess }) {
         alignItems: 'center',
         justifyContent: 'center',
         background: T.bg,
-        fontFamily: T.font
+        fontFamily: T.font,
+        overflowY: 'auto',
+        padding: '16px 0'
       }}
     >
       <div
@@ -106,7 +123,10 @@ export default function Login({ onSuccess }) {
               marginBottom: 18,
               boxSizing: 'border-box'
             }}
-            onFocus={(e) => (e.target.style.borderColor = T.borderStrong)}
+            onFocus={(e) => {
+              e.target.style.borderColor = T.borderStrong
+              setActiveField('phone')
+            }}
             onBlur={(e) => (e.target.style.borderColor = T.border)}
           />
 
@@ -131,7 +151,10 @@ export default function Login({ onSuccess }) {
                 outline: 'none',
                 boxSizing: 'border-box'
               }}
-              onFocus={(e) => (e.target.style.borderColor = T.borderStrong)}
+              onFocus={(e) => {
+                e.target.style.borderColor = T.borderStrong
+                setActiveField('password')
+              }}
               onBlur={(e) => (e.target.style.borderColor = T.border)}
             />
             <button
@@ -153,6 +176,37 @@ export default function Login({ onSuccess }) {
             >
               {showPassword ? 'Скрыть' : 'Показать'}
             </button>
+          </div>
+
+          <div style={{ marginTop: 10 }}>
+            <div style={{ fontSize: 12, color: T.textMuted, fontWeight: 700, marginBottom: 8 }}>
+              {activeField === 'phone' ? 'Ввод: Телефон' : 'Ввод: Пароль'}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+              {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'back'].map((k) => {
+                const isAux = k === 'clear' || k === 'back'
+                return (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => pressKey(k)}
+                    disabled={loading}
+                    style={{
+                      height: 48,
+                      background: isAux ? T.panelStrong : T.panel,
+                      color: k === 'clear' ? T.cancelled : T.text,
+                      border: `2px solid ${T.border}`,
+                      fontFamily: T.font,
+                      fontSize: 20,
+                      fontWeight: 800,
+                      cursor: loading ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    {k === 'back' ? '⌫' : k === 'clear' ? 'C' : k}
+                  </button>
+                )
+              })}
+            </div>
           </div>
 
           {error && (
