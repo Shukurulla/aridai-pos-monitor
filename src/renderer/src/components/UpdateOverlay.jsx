@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { T } from '../lib/theme'
 
-// Doim ko'rinadigan kichik yangilanish paneli. Onlayn rejimda ham (webview
-// ustida), oflayn rejimda ham ko'rinadi — POS'da yangilanishni shu yerdan
+// Doim ko'rinadigan kichik yangilanish paneli (pastki-o'ng burchak). POS
+// har doim native — shuning uchun yangilanishni istalgan paytda shu yerdan
 // tekshirib/o'rnatib bo'ladi.
 export default function UpdateOverlay() {
   const [open, setOpen] = useState(false)

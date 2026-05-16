@@ -167,9 +167,9 @@ export default function SettingsPage({ onLogout }) {
       <div style={{ background: T.surface, border: `1px solid ${T.border}`, padding: 20 }}>
         <h3 style={{ fontSize: 16, fontWeight: 800, margin: '0 0 12px' }}>Информация</h3>
         <ul style={{ margin: 0, paddingLeft: 18, fontSize: 14, lineHeight: 1.7, color: T.text }}>
-          <li>В онлайн-режиме показывается web-приложение кассира (webview).</li>
-          <li>В офлайн-режиме POS работает локально через Hub (Local Server).</li>
-          <li>Переключение режима происходит автоматически при потере / восстановлении интернета.</li>
+          <li>POS всегда работает в этом приложении (нативно), без веб-окна.</li>
+          <li>Данные идут через Local Server: при интернете — синхронизация с сервером, без интернета — локально.</li>
+          <li>Обновления приложения доступны всегда (кнопка «Обновления» внизу справа).</li>
         </ul>
       </div>
 
