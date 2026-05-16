@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { T } from '../lib/theme'
 import OfflineShell from './offline/OfflineShell'
+import UpdateOverlay from '../components/UpdateOverlay'
 
 export default function ModeShell({ auth, onLogout }) {
   const [mode, setMode] = useState('unknown')
@@ -33,8 +34,9 @@ export default function ModeShell({ auth, onLogout }) {
   // Effective mode: agar OS internet uzilgan bo'lsa, online emas
   const effective = !navOnline ? 'offline' : mode
 
+  let content
   if (effective === 'unknown') {
-    return (
+    content = (
       <div
         style={{
           height: '100vh',
@@ -49,13 +51,18 @@ export default function ModeShell({ auth, onLogout }) {
         Определяется режим…
       </div>
     )
+  } else if (effective === 'online' && cashierUrl) {
+    content = <OnlineWebview url={cashierUrl} />
+  } else {
+    content = <OfflineShell auth={auth} onLogout={onLogout} />
   }
 
-  if (effective === 'online' && cashierUrl) {
-    return <OnlineWebview url={cashierUrl} />
-  }
-
-  return <OfflineShell auth={auth} onLogout={onLogout} />
+  return (
+    <>
+      {content}
+      <UpdateOverlay />
+    </>
+  )
 }
 
 function OnlineWebview({ url }) {

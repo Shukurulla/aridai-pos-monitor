@@ -149,6 +149,9 @@ function getAU() {
     _au.autoDownload = false
     _au.autoInstallOnAppQuit = true
     _au.allowDowngrade = true
+    // GitHub'da differential (blockmap, bo'lakma-bo'lak) yuklash juda sekin —
+    // o'chiramiz, to'liq bitta fayl yuklansin (Telegram'dek tez).
+    _au.disableDifferentialDownload = true
   } catch (e) {
     console.warn('[updater] unavailable:', e.message)
     _au = null
