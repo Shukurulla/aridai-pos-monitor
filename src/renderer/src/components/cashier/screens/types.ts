@@ -37,6 +37,10 @@ export interface ScreenCtx {
   ) => Promise<PartialPaymentResult>;
   onPrint: (order: Order) => Promise<void> | void;
   onAddItemsSuccess: (order: Order) => void;
+  // Yangi zakaz yaratilganda (+ Новый заказ / Сабой) — backend response'dagi
+  // to'liq order'ni darhol state'ga qo'shadi. Reload race condition'ini
+  // chetlab o'tadi (povorga check ketdi-yu, lekin Dashboard'da ko'rinmadi).
+  onOrderCreated: (order: Order) => void;
   onShiftChanged: (shift: Shift | null) => void;
   onChangeItemQty: (orderId: string, itemId: string, quantity: number) => Promise<void>;
   onLogout: () => void;

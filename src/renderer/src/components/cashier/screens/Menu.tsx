@@ -548,6 +548,9 @@ export function SaboyScreen({ ctx }: { ctx: ScreenCtx }) {
             category: c.category,
           }));
           const res = await api.createSaboyOrder(items, paymentType);
+          // Optimistic update: backend qaytargan to'liq order'ni darhol
+          // Dashboard state'iga qo'shamiz. Reload race'ini chetlab o'tadi.
+          if (res.order) ctx.onOrderCreated(res.order);
           alert(`Сабой #${res.saboyNumber} создан — ${fmt(res.grandTotal)}`);
           await ctx.reload();
           ctx.go('orders');
@@ -594,6 +597,11 @@ export function NewOrderScreen({ ctx }: { ctx: ScreenCtx }) {
             cart.map((c) => ({ foodId: c._id, name: c.name, price: c.price, quantity: c.quantity })),
           );
           if (res.success) {
+            // Optimistic update — backend qaytargan to'liq order'ni darhol
+            // state'ga qo'shamiz. Avval shunchaki `await ctx.reload()` edi —
+            // lekin Mongo replica race tufayli yangi order ko'rinmasdi (povorga
+            // check ketgani holda). Endi: state'ga darhol qo'shamiz, keyin sync.
+            if (res.order) ctx.onOrderCreated(res.order);
             await ctx.reload();
             ctx.go('orders');
           } else {

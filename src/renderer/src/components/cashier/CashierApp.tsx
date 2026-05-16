@@ -460,6 +460,29 @@ export function CashierApp() {
     [loadData],
   );
 
+  // Yangi zakaz yaratilganda — backend response'dagi to'liq order'ni darhol
+  // local state'ga qo'shamiz. Avval `await ctx.reload()` chaqirilardi, lekin
+  // Mongo replica eventual consistency / race tufayli yangi order Dashboard'da
+  // ko'rinmasdi (povorga check ketgani holda). Endi: optimistic qo'shamiz,
+  // keyin loadData() sync uchun.
+  const handleOrderCreated = useCallback(
+    (newOrder: Order) => {
+      setOrders((prev) => {
+        const idx = prev.findIndex((o) => o._id === newOrder._id);
+        if (idx === -1) return [newOrder, ...prev];
+        // Allaqachon mavjud bo'lsa (mas. mavjud orderga item qo'shildi) —
+        // yangilangan obyektga almashtiramiz, dublikat qilmaymiz.
+        const next = prev.slice();
+        next[idx] = newOrder;
+        return next;
+      });
+      // Backend bilan to'liq sync uchun fon rejimda yangilash. Race'dan keyin
+      // ham yangi order yo'qolmaydi (yuqoridagi setOrders'da allaqachon bor).
+      loadData();
+    },
+    [loadData],
+  );
+
   const handleChangeItemQty = useCallback(
     async (orderId: string, itemId: string, quantity: number) => {
       try {
@@ -542,6 +565,7 @@ export function CashierApp() {
     onPartialPay: handlePartialPayment,
     onPrint: handlePrint,
     onAddItemsSuccess: handleAddItemsSuccess,
+    onOrderCreated: handleOrderCreated,
     onChangeItemQty: handleChangeItemQty,
     onShiftChanged: (s) => {
       setActiveShift(s);

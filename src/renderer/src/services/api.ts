@@ -628,7 +628,7 @@ class ApiService {
     paymentType: PaymentType,
     paymentSplit?: PaymentSplit,
     comment?: string,
-  ): Promise<{ success: boolean; saboyNumber: number; grandTotal: number }> {
+  ): Promise<{ success: boolean; saboyNumber: number; grandTotal: number; order?: Order }> {
     const restaurant = this.getStoredRestaurant();
     if (!restaurant) {
       throw new Error("Ресторан не найден");
@@ -650,10 +650,13 @@ class ApiService {
       }),
     });
 
+    const o = data.data || data.order || data;
     return {
       success: data.success,
-      saboyNumber: data.data?.orderNumber || 0,
-      grandTotal: data.data?.finalTotal || 0,
+      saboyNumber: o?.orderNumber || 0,
+      grandTotal: o?.finalTotal || o?.grandTotal || 0,
+      // To'liq order obyekti — Dashboard state'iga darhol qo'shish uchun.
+      order: o && o._id ? (o as Order) : undefined,
     };
   }
 
@@ -690,7 +693,7 @@ class ApiService {
     tableId: string,
     waiterId: string | undefined,
     items: { foodId: string; name: string; price: number; quantity: number }[],
-  ): Promise<{ success: boolean; orderNumber: number }> {
+  ): Promise<{ success: boolean; orderNumber: number; order?: Order; isNewOrder?: boolean }> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const data = await this.request<any>('/api/orders', {
       method: 'POST',
@@ -702,7 +705,14 @@ class ApiService {
       }),
     });
     const o = data.data || data.order || data;
-    return { success: data.success !== false, orderNumber: o?.orderNumber || 0 };
+    // To'liq order obyektini ham qaytaramiz — yangi yaratilgan zakaz darhol
+    // Dashboard state'iga qo'shilsin (loadData/getOrders race condition'siz).
+    return {
+      success: data.success !== false,
+      orderNumber: o?.orderNumber || 0,
+      order: o && o._id ? (o as Order) : undefined,
+      isNewOrder: data.isNewOrder !== false,
+    };
   }
 
   // ========== MENU (новый endpoint: /api/foods/menu) ==========
