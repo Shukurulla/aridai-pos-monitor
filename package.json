@@ -1,0 +1,73 @@
+{
+  "name": "aridai-pos-monitor",
+  "version": "0.1.0",
+  "description": "AridaiPOS Monitor — Electron POS terminal (webview online + native offline UI)",
+  "main": "out/main/index.js",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "offline": "electron-vite build && electron-vite preview",
+    "make:icon": "magick build/logo.png -background none -resize 256x256 -define icon:auto-resize=256,128,64,48,32,16 build/icon.ico",
+    "build:mac": "electron-vite build && electron-builder --mac",
+    "build:win": "electron-vite build && electron-builder --win",
+    "build:linux": "electron-vite build && electron-builder --linux"
+  },
+  "dependencies": {
+    "axios": "^1.7.7",
+    "electron-updater": "^6.8.3",
+    "socket.io-client": "^4.8.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "electron": "^32.0.0",
+    "electron-builder": "^25.0.5",
+    "electron-vite": "^2.3.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "vite": "^5.4.1"
+  },
+  "build": {
+    "appId": "com.aridai.posmonitor",
+    "productName": "AridaiPOS Monitor",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "out/**/*",
+      "assets/**/*"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "AridaiPOS-Monitor-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "AridaiPOS-Monitor-${version}-portable.${ext}"
+    },
+    "publish": [
+      { "provider": "github", "owner": "Shukurulla", "repo": "aridai-pos-monitor" }
+    ]
+  }
+}
