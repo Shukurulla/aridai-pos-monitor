@@ -1,0 +1,36 @@
+name: Release (Windows)
+
+# v* tag push qilinganda: Windows .exe quriladi va GitHub Release chiqariladi.
+# Shu Release'ni `electron-updater` ko'radi → ilovadagi "Обновления"
+# sahifasida yangi versiya avtomatik ko'rinadi.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Build renderer/main (electron-vite)
+        run: npm run build
+
+      - name: Build + publish Windows installer
+        run: npx electron-builder --win --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -4,6 +4,12 @@ const https = require('https')
 const { loginCashier, getStoredAuth, clearAuth } = require('./auth')
 const { startModeDetector, stopModeDetector, getMode } = require('./mode-detector')
 const { hubRequest, setHubBaseUrl, getHubBaseUrl } = require('./hub-client')
+const { makeStore } = require('./kv-store')
+
+// Kassir sessiyasi — main process'da DOIMIY saqlanadi (userData JSON).
+// Renderer localStorage'ga tayanmaymiz (Electron qayta ochilganda yo'qolardi).
+// Bir marta login → keyin online ham, offline ham avtomatik kirish.
+const sessionStore = makeStore('aridai-pos-session')
 
 let mainWindow = null
 
@@ -60,46 +66,24 @@ function createWindow() {
   })
   mainWindow.maximize()
 
+  // pos-monitor oynasi = O'ZINING renderer'i (= cashier-web kassir UI ko'chirib
+  // olingan, native). Ma'lumot api.ts → Local Server hub (localhost:3011):
+  // online VPS proksi, offline lokal nusxa. Webview / OfflineShell YO'Q.
   const indexFile = path.join(__dirname, '../renderer/index.html')
   const devUrl = process.env.ELECTRON_RENDERER_URL
-
-  // Dev-server (localhost) ochiqligini YUKLASHDAN OLDIN tekshiramiz.
-  // Internetsiz/offline bo'lsa Vite dev server javob bermaydi — o'shanda
-  // qurilgan lokal bundle'ni (file://) yuklaymiz. Shunda offline'da hech
-  // qachon localhost so'rovi bo'lmaydi, xato chiqmaydi, reload ham ishlaydi.
-  function pingDev(url) {
-    return new Promise((resolve) => {
-      try {
-        const http = require('http')
-        const u = new URL(url)
-        const req = http.get(
-          { host: u.hostname, port: u.port || 80, path: '/', timeout: 1500 },
-          (res) => { res.destroy(); resolve(true) }
-        )
-        req.on('error', () => resolve(false))
-        req.on('timeout', () => { req.destroy(); resolve(false) })
-      } catch {
-        resolve(false)
-      }
-    })
-  }
-
-  async function loadApp() {
-    if (devUrl && (await pingDev(devUrl))) {
+  function loadApp() {
+    if (devUrl) {
       mainWindow.loadURL(devUrl)
-      mainWindow.webContents.openDevTools()
       return
     }
-    if (devUrl) console.warn('[main] dev server unreachable (offline) — built bundle yuklanmoqda')
     mainWindow.loadFile(indexFile)
   }
 
-  // Xavfsizlik to'ri: yuklash o'rtada uzilsa — built bundle'ga tushamiz.
   mainWindow.webContents.on('did-fail-load', (_e, errorCode, errorDesc, validatedURL, isMainFrame) => {
     if (!isMainFrame) return
     if (errorCode === -3) return // ABORTED
     if (validatedURL && validatedURL.startsWith('file://')) return
-    console.warn(`[main] renderer load failed (${errorCode} ${errorDesc}) — fallback to built bundle`)
+    console.warn(`[main] renderer load failed (${errorCode} ${errorDesc}) — built bundle`)
     mainWindow.loadFile(indexFile)
   })
 
@@ -177,6 +161,25 @@ app.on('activate', () => {
 ipcMain.handle('auth:login', async (_, { phone, password }) => loginCashier(phone, password))
 ipcMain.handle('auth:current', () => getStoredAuth())
 ipcMain.handle('auth:logout', () => { clearAuth(); return { success: true } })
+
+// Kassir sessiyasi (doimiy, userData) — bir marta login, keyin avto-kirish
+ipcMain.handle('session:get', () => sessionStore.get('cashier') || null)
+ipcMain.handle('session:set', (_, s) => {
+  try {
+    sessionStore.set('cashier', s || null)
+  } catch (_e) {
+    /* ignore */
+  }
+  return { success: true }
+})
+ipcMain.handle('session:clear', () => {
+  try {
+    sessionStore.delete('cashier')
+  } catch (_e) {
+    /* ignore */
+  }
+  return { success: true }
+})
 
 ipcMain.handle('mode:get', () => getMode())
 

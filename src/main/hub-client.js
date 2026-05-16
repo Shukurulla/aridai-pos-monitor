@@ -22,7 +22,10 @@ async function hubRequest(method, path, body) {
       method: method || 'GET',
       url,
       data: body,
-      timeout: 5000
+      // Local Server /api/* ni VPS'ga proksi qiladi (15s). Bu timeout undan
+      // KAM bo'lsa, sekin VPS'da so'rov tugamasdan uzilib "long loading"
+      // bo'lardi. 20s — lokal nusxa baribir tez javob qaytaradi.
+      timeout: 20000
     })
     return { success: true, data }
   } catch (err) {
