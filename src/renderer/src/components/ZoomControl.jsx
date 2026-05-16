@@ -1,24 +1,35 @@
 import { useEffect, useState } from 'react'
 
-// Ручной зум экрана (− / + / сброс). Сохраняется и применяется через CSS zoom.
-const KEY = 'ui-zoom'
+// Ekran zoom'i — ELECTRON-NATIVE (main process: webContents.setZoomFactor).
+// CSS zoom EMAS — shuning uchun sahifa qayta joylanadi, chetda bo'sh joy
+// QOLMAYDI. Qiymat saqlanadi (main), qayta ochilganda tiklanadi.
 const MIN = 0.5
 const MAX = 2
 const STEP = 0.1
 const clamp = (z) => Math.min(MAX, Math.max(MIN, Math.round(z * 100) / 100))
 
+function bridge() {
+  if (typeof window === 'undefined') return null
+  return (window.pos && window.pos.zoom) || (window.aridai && window.aridai.zoom) || null
+}
+
 export default function ZoomControl() {
   const [zoom, setZoom] = useState(1)
 
   useEffect(() => {
-    const saved = parseFloat(localStorage.getItem(KEY) || '1')
-    setZoom(isNaN(saved) ? 1 : clamp(saved))
+    const z = bridge()
+    if (!z) return
+    Promise.resolve(z.get())
+      .then((f) => setZoom(clamp(Number(f) || 1)))
+      .catch(() => {})
   }, [])
 
-  useEffect(() => {
-    document.documentElement.style.zoom = String(zoom)
-    localStorage.setItem(KEY, String(zoom))
-  }, [zoom])
+  const apply = (next) => {
+    const z = clamp(next)
+    setZoom(z)
+    const b = bridge()
+    if (b) Promise.resolve(b.set(z)).catch(() => {})
+  }
 
   const btn = {
     width: 44,
@@ -35,6 +46,8 @@ export default function ZoomControl() {
     justifyContent: 'center'
   }
 
+  if (!bridge()) return null // faqat Electron'da
+
   return (
     <div
       style={{
@@ -50,17 +63,17 @@ export default function ZoomControl() {
         userSelect: 'none'
       }}
     >
-      <button style={btn} onClick={() => setZoom((z) => clamp(z - STEP))} title="Уменьшить">
+      <button style={btn} onClick={() => apply(zoom - STEP)} title="Уменьшить">
         −
       </button>
       <button
         style={{ ...btn, width: 58, fontSize: 14, fontWeight: 800 }}
-        onClick={() => setZoom(1)}
+        onClick={() => apply(1)}
         title="Сбросить (100%)"
       >
         {Math.round(zoom * 100)}%
       </button>
-      <button style={btn} onClick={() => setZoom((z) => clamp(z + STEP))} title="Увеличить">
+      <button style={btn} onClick={() => apply(zoom + STEP)} title="Увеличить">
         +
       </button>
     </div>

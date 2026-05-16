@@ -7,6 +7,38 @@ const { hubRequest, setHubBaseUrl, getHubBaseUrl } = require('./hub-client')
 
 let mainWindow = null
 
+// ── Ekran zoom'i: ELECTRON-NATIVE (setZoomFactor — sahifa qayta joylanadi,
+//    chetda bo'sh joy QOLMAYDI). Saqlanadi, qayta yuklanganda tiklanadi.
+const fs = require('fs')
+let currentZoom = 1
+const clampZoom = (f) => Math.min(2, Math.max(0.5, Math.round((Number(f) || 1) * 100) / 100))
+function zoomFile() {
+  return path.join(app.getPath('userData'), 'ui-zoom.json')
+}
+function loadZoom() {
+  try {
+    const f = Number(JSON.parse(fs.readFileSync(zoomFile(), 'utf8')).factor)
+    currentZoom = f >= 0.5 && f <= 2 ? f : 1
+  } catch {
+    currentZoom = 1
+  }
+  return currentZoom
+}
+function applyZoom(f) {
+  currentZoom = clampZoom(f)
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.setZoomFactor(currentZoom)
+  } catch {
+    /* ignore */
+  }
+  try {
+    fs.writeFileSync(zoomFile(), JSON.stringify({ factor: currentZoom }))
+  } catch {
+    /* ignore */
+  }
+  return currentZoom
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1366,
@@ -71,14 +103,31 @@ function createWindow() {
     mainWindow.loadFile(indexFile)
   })
 
-  // Reload (Cmd/Ctrl+R yoki F5) — qayta ulanish holatini tekshiramiz, shunda
-  // offline'da reload bosilsa dev URL emas, built bundle yuklanadi.
+  // Har yuklanganda saqlangan zoom'ni tiklash
+  mainWindow.webContents.on('did-finish-load', () => {
+    try {
+      mainWindow.webContents.setZoomFactor(loadZoom())
+    } catch {
+      /* ignore */
+    }
+  })
+
+  // Reload (Cmd/Ctrl+R yoki F5) + zoom klavishlari (Ctrl/Cmd +/−/0).
   mainWindow.webContents.on('before-input-event', (e, input) => {
     if (input.type !== 'keyDown') return
     const k = String(input.key || '').toLowerCase()
     if (k === 'f5' || ((input.control || input.meta) && k === 'r')) {
       e.preventDefault()
       loadApp()
+    } else if ((input.control || input.meta) && (k === '=' || k === '+' || input.key === '+')) {
+      e.preventDefault()
+      applyZoom(currentZoom + 0.1)
+    } else if ((input.control || input.meta) && (k === '-' || k === '_')) {
+      e.preventDefault()
+      applyZoom(currentZoom - 0.1)
+    } else if ((input.control || input.meta) && k === '0') {
+      e.preventDefault()
+      applyZoom(1)
     }
   })
 
@@ -130,6 +179,10 @@ ipcMain.handle('auth:current', () => getStoredAuth())
 ipcMain.handle('auth:logout', () => { clearAuth(); return { success: true } })
 
 ipcMain.handle('mode:get', () => getMode())
+
+// Ekran zoom'i (Electron-native)
+ipcMain.handle('zoom:get', () => currentZoom)
+ipcMain.handle('zoom:set', (_, f) => applyZoom(f))
 
 // Hub (Local Server LAN API) settings
 ipcMain.handle('hub:get-url', () => getHubBaseUrl())

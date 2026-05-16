@@ -6,6 +6,10 @@ contextBridge.exposeInMainWorld('pos', {
     current: () => ipcRenderer.invoke('auth:current'),
     logout: () => ipcRenderer.invoke('auth:logout')
   },
+  zoom: {
+    get: () => ipcRenderer.invoke('zoom:get'),
+    set: (factor) => ipcRenderer.invoke('zoom:set', factor)
+  },
   mode: {
     get: () => ipcRenderer.invoke('mode:get'),
     onChange: (cb) => {
