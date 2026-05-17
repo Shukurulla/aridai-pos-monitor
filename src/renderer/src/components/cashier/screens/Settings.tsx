@@ -114,11 +114,28 @@ export function SettingsScreen({ ctx }: { ctx: ScreenCtx }) {
   const [ver, setVer] = useState('');
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [ust, setUst] = useState<any>({ state: 'idle' });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [rels, setRels] = useState<any[]>([]);
+  const loadRels = () => {
+    if (!U?.releases) return;
+    U.releases()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .then((r: any) => {
+        if (r && r.success) setRels(r.data || []);
+      })
+      .catch(() => {});
+  };
   useEffect(() => {
     if (!U) return;
     U.current().then((r: { version?: string }) => setVer(r?.version || '')).catch(() => {});
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const off = U.onEvent((p: any) => setUst(p || { state: 'idle' }));
+    // Sozlama ochilganda DARHOL tekshiramiz (avval faqat ishga tushganda
+    // 1 marta tekshirilardi → Sozlamani ochganda holat 'idle' bo'lib
+    // "Скачать" chiqmasdi). + GitHub relizlar ro'yxatini yuklaymiz —
+    // to'g'ridan-to'g'ri .exe yuklab olish uchun (ishonchli yo'l).
+    U.check?.().catch(() => {});
+    loadRels();
     return off;
   }, [U]);
   const uLabel = () => {
@@ -303,6 +320,61 @@ export function SettingsScreen({ ctx }: { ctx: ScreenCtx }) {
                   </Btn>
                 )}
               </div>
+
+              {/* To'g'ridan-to'g'ri .exe yuklash (ishonchli yo'l —
+                  auto-update holatiga bog'liq emas). */}
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginTop: 12,
+                }}
+              >
+                <SectionTitle>Скачать вручную (.exe)</SectionTitle>
+                <Btn onClick={loadRels} height={40}>
+                  Обновить список
+                </Btn>
+              </div>
+              {rels.length === 0 && (
+                <div style={{ fontSize: 13, color: T.textMuted }}>
+                  Список релизов недоступен (нет интернета или GitHub). Можно
+                  скачать с github.com/Shukurulla/aridai-pos-monitor/releases
+                </div>
+              )}
+              {rels.slice(0, 6).map((r) => (
+                <div
+                  key={r.tag}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: '8px 0',
+                    borderBottom: `1px solid ${T.border}`,
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 800 }}>
+                      {r.name || r.tag} {r.prerelease ? '(beta)' : ''}
+                    </div>
+                    <div style={{ fontSize: 12, color: T.textMuted }}>
+                      {r.tag}
+                      {r.publishedAt
+                        ? ' · ' + new Date(r.publishedAt).toLocaleDateString('ru-RU')
+                        : ''}
+                    </div>
+                  </div>
+                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                  {(r.exe || []).map((a: any) => (
+                    <Btn key={a.url} onClick={() => U.open(a.url)} height={44}>
+                      Скачать .exe
+                    </Btn>
+                  ))}
+                  <Btn onClick={() => U.open(r.url)} height={44}>
+                    Открыть
+                  </Btn>
+                </div>
+              ))}
             </>
           )}
 
