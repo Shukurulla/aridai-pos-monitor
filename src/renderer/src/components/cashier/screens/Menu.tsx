@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { api } from '@/services/api';
 import { PaymentType, SaboyItem, Waiter } from '@/types';
 import { T, NavIcon, fmt } from '@/lib/theme';
@@ -72,7 +72,31 @@ function MenuScreen({
     () => (activeCat === 'all' ? menuItems : menuItems.filter((m) => m.category === activeCat)),
     [menuItems, activeCat],
   );
-  const PER_PAGE = 12;
+  // Zoomga MOSLASHUVCHI: grid konteyneriga nechta karta sig'sa
+  // (ustun × qator) — shuncha PER_PAGE. Zoom uzoqlashsa ko'proq taom
+  // bir sahifada; bo'sh joy/ortiqcha sahifa yo'qoladi (scroll'siz).
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [gridFit, setGridFit] = useState({ cols: 3, rows: 4 });
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el) return;
+    const CARD_W = 190;
+    const CARD_H = 120;
+    const GAP = 10;
+    const PAD = 28;
+    const recompute = () => {
+      const w = el.clientWidth - PAD;
+      const h = el.clientHeight - PAD;
+      const cols = Math.max(1, Math.floor((w + GAP) / (CARD_W + GAP)));
+      const rows = Math.max(1, Math.floor((h + GAP) / (CARD_H + GAP)));
+      setGridFit((g) => (g.cols === cols && g.rows === rows ? g : { cols, rows }));
+    };
+    recompute();
+    const ro = new ResizeObserver(recompute);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const PER_PAGE = Math.max(6, gridFit.cols * gridFit.rows);
   const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
   const curPage = Math.min(menuPage, totalPages);
   const visible = filtered.slice((curPage - 1) * PER_PAGE, curPage * PER_PAGE);
@@ -203,12 +227,13 @@ function MenuScreen({
         >
           <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
             <div
+              ref={gridRef}
               style={{
                 flex: 1,
                 padding: 14,
                 overflow: 'hidden',
                 display: 'grid',
-                gridTemplateColumns: 'repeat(3, 1fr)',
+                gridTemplateColumns: `repeat(${gridFit.cols}, 1fr)`,
                 gridAutoRows: '120px',
                 gap: 10,
                 alignContent: 'start',

@@ -293,6 +293,32 @@ export function DashboardScreen({ ctx }: { ctx: ScreenCtx }) {
   const [merging, setMerging] = useState(false);
   const selected = ctx.mergeSelection;
 
+  // Zoomga MOSLASHUVCHI grid: konteynerni o'lchab, nechta karta sig'sa
+  // (ustun × qator) — shuncha PER_PAGE. Zoom uzoqlashsa (CSS px ko'payadi)
+  // → ko'proq ustun/qator → ko'proq order bir sahifada, bo'sh joy va
+  // ortiqcha sahifalar yo'qoladi. Tartib: aniq `repeat(cols,1fr)`.
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [gridFit, setGridFit] = useState({ cols: 4, rows: 2 });
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el) return;
+    const CARD_W = 300;
+    const CARD_H = 210;
+    const GAP = 14;
+    const PAD = 36;
+    const recompute = () => {
+      const w = el.clientWidth - PAD;
+      const h = el.clientHeight - PAD;
+      const cols = Math.max(1, Math.floor((w + GAP) / (CARD_W + GAP)));
+      const rows = Math.max(1, Math.floor((h + GAP) / (CARD_H + GAP)));
+      setGridFit((g) => (g.cols === cols && g.rows === rows ? g : { cols, rows }));
+    };
+    recompute();
+    const ro = new ResizeObserver(recompute);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   const orders = ctx.orders;
   const activeOrders = orders.filter(
     (o) => o.paymentStatus !== 'paid' && o.status !== 'cancelled' && hasActiveItems(o),
@@ -346,7 +372,7 @@ export function DashboardScreen({ ctx }: { ctx: ScreenCtx }) {
     );
   }, [base, search]);
 
-  const PER_PAGE = 8;
+  const PER_PAGE = Math.max(4, gridFit.cols * gridFit.rows);
   const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
   const curPage = Math.min(page, totalPages);
   const visible = filtered.slice((curPage - 1) * PER_PAGE, curPage * PER_PAGE);
@@ -577,11 +603,12 @@ export function DashboardScreen({ ctx }: { ctx: ScreenCtx }) {
       {/* Grid + pager */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         <div
+          ref={gridRef}
           style={{
             flex: 1,
             padding: 18,
             display: 'grid',
-            gridTemplateColumns: 'repeat(4, 1fr)',
+            gridTemplateColumns: `repeat(${gridFit.cols}, 1fr)`,
             gridAutoRows: 'min-content',
             alignContent: 'start',
             gap: 14,
