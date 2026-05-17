@@ -153,11 +153,13 @@ export function SettingsScreen({ ctx }: { ctx: ScreenCtx }) {
       <div
         style={{
           flex: 1,
+          minHeight: 0,
           padding: 22,
-          overflow: 'hidden',
+          overflowY: 'auto',
           display: 'grid',
           gridTemplateColumns: '1fr 1fr',
           gap: 18,
+          alignItems: 'start',
         }}
       >
         <div
