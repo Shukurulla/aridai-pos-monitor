@@ -2,7 +2,13 @@
 <html lang="ru">
   <head>
     <meta charset="UTF-8" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https://kepket-kz-cashier.vercel.app https://kz.kepket.uz http://localhost:* ws: wss:" />
+    <!--
+      CSP — LAN/WiFi hub uchun http://*:* ham ruxsat (boshqa pos-monitor'lar
+      bitta filialdagi local-server'ga IP orqali ulansa, mas. 192.168.1.50:3011).
+      Faqat HTTP/WS connect uchun, default-src boshqa elementlar uchun cheklov
+      saqlanadi (skript/css 'self' ichida).
+    -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https://kepket-kz-cashier.vercel.app https://kz.kepket.uz http://localhost:* http://*:* ws://*:* ws: wss:" />
     <title>AridaiPOS Monitor</title>
     <style>
       html, body, #root {

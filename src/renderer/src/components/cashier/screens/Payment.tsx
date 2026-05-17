@@ -5,6 +5,7 @@ import { Order, PaymentType, PaymentSplit } from '@/types';
 import { T, NavIcon, fmt, fmtN } from '@/lib/theme';
 import { Pager, CTA } from '../shell';
 import { ScreenCtx } from './types';
+import { itemLineTotal, computeHourlyForItem, hasLiveHourly } from '@/utils/hourly';
 
 const calcHourly = (order: Order | null): { hours: number; charge: number } => {
   if (!order || !order.hasHourlyCharge || !order.hourlyChargeAmount || order.hourlyChargeAmount <= 0) {
@@ -49,6 +50,14 @@ export function PaymentScreen({ ctx }: { ctx: ScreenCtx }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [order?._id]);
 
+  // Soatlik item bo'lsa — har 30s re-render, summa JONLI o'sib tursin.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!order || !hasLiveHourly(order.items)) return;
+    const t = setInterval(() => setTick((x) => x + 1), 30000);
+    return () => clearInterval(t);
+  }, [order]);
+
   useEffect(() => {
     if (!order) ctx.go('orders');
   }, [order, ctx]);
@@ -58,11 +67,12 @@ export function PaymentScreen({ ctx }: { ctx: ScreenCtx }) {
 
   const selectedItems = unpaidItems.filter((i) => selected.has(i._id));
   const itemsToPay = mode === 'full' ? unpaidItems : selectedItems;
-  const subtotal = itemsToPay.reduce((s, i) => s + i.price * i.quantity, 0);
+  // Soatlik item'lar (PlayStation/bilyard) DAQIQALI hisoblanadi — 0 emas.
+  const subtotal = itemsToPay.reduce((s, i) => s + itemLineTotal(i), 0);
   const { hours, charge } = calcHourly(order);
   const hourly = mode === 'full' ? charge : 0;
   const grandTotal = subtotal + hourly;
-  const paidTotal = paidItems.reduce((s, i) => s + i.price * i.quantity, 0);
+  const paidTotal = paidItems.reduce((s, i) => s + itemLineTotal(i), 0);
 
   const splitSum = split.cash + split.card + split.click;
   const splitRemaining = grandTotal - splitSum;
@@ -248,7 +258,9 @@ export function PaymentScreen({ ctx }: { ctx: ScreenCtx }) {
                 const isPaid = it.isPaid;
                 const isSel = selected.has(it._id);
                 const canSelect = !isPaid && mode === 'partial';
-                const amount = it.price * it.quantity;
+                // Soatlik item — DAQIQALI hisoblangan summa (0 emas).
+                const hcalc = it.isHourly ? computeHourlyForItem(it, Date.now()) : null;
+                const amount = it.isHourly ? hcalc!.amount : it.price * it.quantity;
                 return (
                   <div
                     key={it._id}
@@ -336,7 +348,9 @@ export function PaymentScreen({ ctx }: { ctx: ScreenCtx }) {
                         }}
                       >
                         <span>
-                          {fmt(it.price)} × {it.quantity}
+                          {it.isHourly
+                            ? `${fmt(it.hourlyPrice || 0)}/ч · ${Math.floor((hcalc!.totalMinutes || 0) / 60)}ч ${(hcalc!.totalMinutes || 0) % 60}мин`
+                            : `${fmt(it.price)} × ${it.quantity}`}
                         </span>
                         {isPaid && <span style={{ color: T.paid, fontWeight: 800 }}>ОПЛАЧЕНО</span>}
                       </div>

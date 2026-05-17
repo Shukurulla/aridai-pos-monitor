@@ -1,12 +1,27 @@
 import { PrinterInfo, PaymentData } from '@/types';
 
-// AridaiPOS Local Server printer-hub (тот же ПК, LAN порт 3011).
-// Переопределяется localStorage 'printHubUrl' при необходимости.
-const PRINT_SERVER_URL =
-  (typeof window !== 'undefined' &&
-    (window as unknown as { __API_BASE__?: string }).__API_BASE__) ||
-  (typeof window !== 'undefined' && localStorage.getItem('printHubUrl')) ||
-  'http://localhost:3011';
+// AridaiPOS Local Server printer-hub.
+// Priority bo'yicha:
+//  1) __API_BASE__ (preload injekt),
+//  2) 'hub-url' (Settings → Local Server Hub — barcha API requestlar uchun ham
+//     shu key ishlatiladi, izchillik uchun),
+//  3) 'printHubUrl' (eski key — orqaga muvofiqlik),
+//  4) default localhost:3011.
+function readPrintHubUrl(): string {
+  if (typeof window === 'undefined') return 'http://localhost:3011';
+  try {
+    const injected = (window as unknown as { __API_BASE__?: string }).__API_BASE__;
+    if (injected) return injected;
+    const hubUrl = localStorage.getItem('hub-url');
+    if (hubUrl) return hubUrl.trim().replace(/\/+$/, '');
+    const legacy = localStorage.getItem('printHubUrl');
+    if (legacy) return legacy.trim().replace(/\/+$/, '');
+  } catch {
+    /* ignore */
+  }
+  return 'http://localhost:3011';
+}
+const PRINT_SERVER_URL = readPrintHubUrl();
 
 // Electron pos-monitor: so'rov MAIN process orqali (window.pos.hub) —
 // internet uzilganda ham localhost'ga kira oladi (Node, Chromium emas).

@@ -6,48 +6,12 @@ import { api } from '@/services/api';
 import { T, NavIcon, fmt, payLabel, StatusKey } from '@/lib/theme';
 import { StatusPill, Pager, CTA, Btn } from '../shell';
 import { ScreenCtx } from './types';
+import { computeHourlyForItem, formatDuration, calculateHourlyCharge } from '@/utils/hourly';
 
-// ─── Hourly helpers (preserved from original OrderCard) ──────────────────────
-export const computeHourlyForItem = (item: OrderItem, now: number) => {
-  if (!item.isHourly) return { totalMinutes: 0, amount: 0 };
-  if (item.hourlyFinalAmount && item.hourlyFinalAmount > 0) {
-    const start = item.hourlyStartedAt ? new Date(item.hourlyStartedAt).getTime() : 0;
-    const stop = item.hourlyStoppedAt ? new Date(item.hourlyStoppedAt).getTime() : now;
-    const minutes = Math.max(0, Math.floor((stop - start) / 60000));
-    return { totalMinutes: minutes, amount: item.hourlyFinalAmount };
-  }
-  const start = item.hourlyStartedAt
-    ? new Date(item.hourlyStartedAt).getTime()
-    : item.addedAt
-      ? new Date(item.addedAt).getTime()
-      : now;
-  const stop = item.hourlyStoppedAt ? new Date(item.hourlyStoppedAt).getTime() : now;
-  const diffMs = Math.max(0, stop - start);
-  const totalMinutes = Math.floor(diffMs / 60000);
-  const amount = Math.round((diffMs / 3600000) * (item.hourlyPrice || 0) * (item.quantity || 1));
-  return { totalMinutes, amount };
-};
-
-export const formatDuration = (totalMinutes: number) => {
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  if (hours === 0) return `${minutes} мин`;
-  if (minutes === 0) return `${hours} ч`;
-  return `${hours} ч ${minutes} мин`;
-};
-
-export const calculateHourlyCharge = (order: Order): { hours: number; charge: number } => {
-  if (!order.hasHourlyCharge || !order.hourlyChargeAmount || order.hourlyChargeAmount <= 0) {
-    return { hours: 0, charge: 0 };
-  }
-  const createdAt = new Date(order.createdAt);
-  const now = new Date();
-  const diffMs = now.getTime() - createdAt.getTime();
-  const diffHours = diffMs / (1000 * 60 * 60);
-  const hours = Math.max(1, Math.ceil(diffHours));
-  const charge = hours * order.hourlyChargeAmount;
-  return { hours, charge };
-};
+// ─── Hourly helpers — YAGONA MANBA endi @/utils/hourly (api.ts ham ishlatadi).
+// Lokal ishlatamiz VA eski import yo'llari (OrderDetail) buzilmasin uchun
+// shu yerdan re-export qilamiz.
+export { computeHourlyForItem, formatDuration, calculateHourlyCharge };
 
 // Derive display status (StatusKey) from order + items
 export const orderStatusKey = (order: Order): StatusKey => {
@@ -171,7 +135,7 @@ function OrderCard({
           <StatusPill status={sk} size="sm" />
         </div>
         <div style={{ fontSize: 12, color: T.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {order.isOffline ? 'Офлайн' : `№${order.orderNumber}`} · {order.waiter.name} · {itemCount} блюд
+          {order.isOffline ? 'Офлайн' : `№${order.orderNumber}`} · {order.waiter?.name || '—'} · {itemCount} блюд
         </div>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginTop: 2 }}>
           <span style={{ fontSize: 12, color: T.textMuted, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.4 }}>

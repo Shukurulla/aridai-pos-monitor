@@ -582,6 +582,24 @@ export function NewOrderScreen({ ctx }: { ctx: ScreenCtx }) {
       .finally(() => setLoading(false));
   }, []);
 
+  // Stol bandligini AKTIV ORDERLAR'dan aniqlaymiz (manba haqiqat) — online'da
+  // VPS /api/tables status/activeOrderId bermasligi mumkin, shuning uchun
+  // t.occupied'ga TAYANMAYMIZ. Joriy (to'lanmagan, bekor qilinmagan, blyudoli)
+  // dine-in order bo'lsa — stol BAND. Online ham, offline ham bir xil ishlaydi.
+  const occ = useMemo(() => {
+    const ids = new Set<string>();
+    const nums = new Set<number>();
+    for (const o of ctx.orders) {
+      if (o.orderType === 'saboy') continue;
+      if (o.status !== 'active') continue;
+      if (!o.items?.some((it) => !it.isCancelled && it.status !== 'cancelled' && !it.isDeleted))
+        continue;
+      if (o.tableId) ids.add(String(o.tableId));
+      if (o.tableNumber) nums.add(Number(o.tableNumber));
+    }
+    return { ids, nums };
+  }, [ctx.orders]);
+
   if (step === 'menu' && table) {
     return (
       <MenuScreen
@@ -595,6 +613,7 @@ export function NewOrderScreen({ ctx }: { ctx: ScreenCtx }) {
             table._id,
             waiter?._id,
             cart.map((c) => ({ foodId: c._id, name: c.name, price: c.price, quantity: c.quantity })),
+            { tableName: table.title, tableNumber: table.number, waiterName: waiter?.name },
           );
           if (res.success) {
             // Optimistic update — backend qaytargan to'liq order'ni darhol
@@ -679,7 +698,10 @@ export function NewOrderScreen({ ctx }: { ctx: ScreenCtx }) {
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12 }}>
                     {list.map((t) => {
-                      const busy = t.occupied;
+                      const busy =
+                        t.occupied ||
+                        occ.ids.has(String(t._id)) ||
+                        (!!t.number && occ.nums.has(Number(t.number)));
                       return (
                         <button
                           key={t._id}

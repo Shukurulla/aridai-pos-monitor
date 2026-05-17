@@ -1,19 +1,189 @@
 import { User, Restaurant, Order, DailySummary, PaymentType, PaymentSplit, SaboyItem, PartialPaymentResult, OrderItem, Shift, ExpenseCategory, Expense, Advance, Waiter } from "@/types";
+import { itemLineTotal } from "@/utils/hourly";
 
-// API manzili:
-//  1) window.__API_BASE__ (agar injekt qilingan bo'lsa),
-//  2) Electron pos-monitor (window.pos bor) → Local Server hub
+// API manzili (priority bo'yicha):
+//  1) window.__API_BASE__ (preload orqali injekt qilingan bo'lsa),
+//  2) localStorage 'hub-url' (Settings ekranida foydalanuvchi kiritgan IP) —
+//     filialdagi BOSHQA pos-monitor LAN orqali asosiy POS dagi local-server
+//     hub'iga ulanishi uchun. Mas. "http://192.168.1.50:3011".
+//  3) Electron pos-monitor (window.pos bor) → o'zining lokal Local Server hub'i
 //     (localhost:3011): online → VPS'ga shaffof proksi, offline → lokal nusxa,
-//  3) web — public VPS sayti.
+//  4) web — public VPS sayti.
+function readStoredHubUrl(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    const raw = window.localStorage?.getItem("hub-url") || "";
+    const trimmed = raw.trim().replace(/\/+$/, ""); // oxiridagi / olib tashlash
+    return trimmed;
+  } catch {
+    return "";
+  }
+}
+
+// Soatlik taom rate'i = taomning JORIY narxi (foods.price). getMenuItems
+// uni 'foodPriceMap' (foodId→price) ga keshlaydi. getOrders/optimistik
+// mapping soatlik item.hourlyPrice'ini SHU yerdan override qiladi —
+// backend/VPS statik (yaratilgandagi) qiymatga TAYANMAYMIZ. Online ham,
+// offline ham bir xil; local-server qayta ishga tushishi shart emas.
+function readFoodPriceMap(): Record<string, number> {
+  if (typeof window === 'undefined') return {};
+  try {
+    return JSON.parse(window.localStorage?.getItem('foodPriceMap') || '{}') || {};
+  } catch {
+    return {};
+  }
+}
+function foodIdOf(it: { foodId?: unknown }): string {
+  const f = it?.foodId as { _id?: string; id?: string } | string | undefined | null;
+  if (f && typeof f === 'object') return String(f._id || f.id || '');
+  return f != null ? String(f) : '';
+}
+
 const API_BASE_URL =
   (typeof window !== "undefined" &&
     (window as unknown as { __API_BASE__?: string }).__API_BASE__) ||
+  readStoredHubUrl() ||
   (typeof window !== "undefined" &&
   (window as unknown as { pos?: unknown }).pos
     ? "http://localhost:3011"
     : "") ||
   (typeof process !== "undefined" ? process.env?.NEXT_PUBLIC_API_URL : "") ||
   "https://kz.kepket.uz";
+
+// Debug uchun — qaysi URL'ga ulanyapti ko'rinsin.
+if (typeof window !== "undefined") {
+  // eslint-disable-next-line no-console
+  console.log(`[api] base URL: ${API_BASE_URL}`);
+}
+
+// Sync status — local-server hub'idan (api siz, lokal endpoint).
+// Pos-monitor "Синхронизация…" overlay'i uchun mode 'online'ga o'tganda
+// polling qilinadi. Web'da (cashier-web) ishlatilmaydi.
+export type SyncStatus = {
+  pending: number;
+  failed: number;
+  isFlushing: boolean;
+  lastFlushedAt: number;
+  lastFlushedCount: number;
+  isOnline: boolean;
+  lastError: null | {
+    entityType: string;
+    entityId: string;
+    operation: string;
+    attempts: number;
+    message: string;
+    at: number;
+  };
+};
+
+// Backend response order obyekti (populated waiterId/tableId) → Dashboard
+// kutadigan 'Order' formatiga moslashtirish. `getOrders` ham xuddi shu
+// shaklni qaytaradi (waiter.name string, tableName, items shakli va h.k.).
+// `createOrder`/`createSaboyOrder` response'ini optimistic update qilishda
+// shuning uchun shu mapping kerak — aks holda OrderCard `order.waiter.name`
+// undefined da crash bo'ladi.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapBackendOrderToDashboard(rawOrder: any): Order {
+  const o = rawOrder || {};
+  const rawItems = Array.isArray(o.items) ? o.items : [];
+  const _fpm = readFoodPriceMap();
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const items = rawItems.map((item: any) => ({
+    _id: item._id?.toString() || item.id || '',
+    foodId: item.foodId?._id || item.foodId || '',
+    name: item.foodId?.name || item.foodName || item.name || 'Блюдо',
+    foodName: item.foodId?.name || item.foodName || item.name || 'Блюдо',
+    price: Number(item.price) || 0,
+    quantity: Number(item.quantity) || 1,
+    status: item.status || 'pending',
+    addedAt: item.addedAt || item.createdAt || o.createdAt,
+    addedBy: item.addedBy,
+    addedByName: item.addedByName,
+    isHourly: item.isHourly === true,
+    // Soatlik rate = taom JORIY narxi (kesh); statik qiymat zaxira.
+    hourlyPrice:
+      item.isHourly === true
+        ? Number(_fpm[foodIdOf(item)]) || Number(item.hourlyPrice) || 0
+        : Number(item.hourlyPrice) || 0,
+    hourlyStartedAt: item.hourlyStartedAt,
+    hourlyStoppedAt: item.hourlyStoppedAt,
+    hourlyFinalAmount: item.hourlyFinalAmount,
+    isPaid: item.isPaid === true,
+    paidAt: item.paidAt,
+    paymentSessionId: item.paymentSessionId,
+    itemPaymentType: item.itemPaymentType,
+    isCancelled: item.status === 'cancelled' || item.isCancelled === true,
+    cancelledAt: item.cancelledAt,
+    cancelledBy: item.cancelledBy,
+    cancelReason: item.cancelReason,
+    isDeleted: item.isDeleted === true,
+  }));
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const tableId: any = o.tableId;
+  const tableNumber = tableId?.number || o.tableNumber || 0;
+  const tableName =
+    (tableId && typeof tableId === 'object' && (tableId.title || (tableId.number != null ? `Стол ${tableId.number}` : null))) ||
+    o.tableName ||
+    (tableNumber ? `Стол ${tableNumber}` : '');
+
+  const isSaboy = o.orderType === 'saboy';
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const waiterId: any = o.waiterId;
+  const waiterName = waiterId && typeof waiterId === 'object'
+    ? `${waiterId.firstName || ''} ${waiterId.lastName || ''}`.trim()
+    : (o.waiterName || '');
+
+  const activeItems = items.filter((i: { status: string; isCancelled?: boolean }) => i.status !== 'cancelled' && !i.isCancelled);
+  const subtotal = activeItems.reduce((sum: number, i: { price: number; quantity: number }) => sum + i.price * i.quantity, 0);
+  const isPaid = o.isPaid === true || o.status === 'paid';
+  const isCancelled = o.status === 'cancelled';
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return {
+    _id: o._id?.toString() || '',
+    orderNumber: o.orderNumber || 0,
+    isOffline: false,
+    orderType: o.orderType,
+    saboyNumber: o.saboyNumber || o.orderNumber,
+    tableNumber,
+    tableName: isSaboy ? 'Сабой' : tableName,
+    items,
+    status: isCancelled ? 'cancelled' : (isPaid ? 'paid' : 'active'),
+    paymentStatus: isPaid ? 'paid' : 'pending',
+    paymentType: o.paymentType,
+    total: subtotal,
+    serviceFee: 0,
+    grandTotal: subtotal,
+    waiter: {
+      _id: waiterId?._id?.toString() || waiterId || '',
+      name: waiterName || 'Неизвестно',
+    },
+    createdAt: o.createdAt,
+    paidAt: o.paidAt,
+    hasHourlyCharge: o.hasHourlyCharge || tableId?.hasHourlyCharge || false,
+    hourlyChargeAmount: o.hourlyChargeAmount || tableId?.hourlyChargeAmount || 0,
+    hourlyCharge: o.hourlyCharge || 0,
+    hourlyChargeHours: o.hourlyChargeHours || 0,
+  } as unknown as Order;
+}
+
+export async function getSyncStatus(): Promise<SyncStatus | null> {
+  // window.pos bo'lmasa (web mode) — sync overlay shartmas.
+  if (typeof window === "undefined") return null;
+  try {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 3000);
+    const res = await fetch(`${API_BASE_URL}/sync/status`, { signal: ctl.signal });
+    clearTimeout(t);
+    if (!res.ok) return null;
+    const json = await res.json();
+    return (json?.data || null) as SyncStatus | null;
+  } catch {
+    return null;
+  }
+}
 
 // Stol nomini har xil backend/mirror shaklidan aniqlash. tableId populate
 // qilinmasa — oxirgi /api/tables keshi (localStorage 'tablesMap') orqali.
@@ -200,6 +370,17 @@ class ApiService {
     // Новый backend: { success, data: { orders } }
     const orders = data.data?.orders || data.data || data.orders || [];
 
+    // Soatlik rate = taom JORIY narxi (kesh). Bo'sh bo'lsa — menyuni
+    // orqa fonda bir marta tortib keshlaymiz (keyingi yangilanishda to'g'ri).
+    const _fpm = readFoodPriceMap();
+    if (Object.keys(_fpm).length === 0) {
+      try {
+        this.getMenuItems().catch(() => {});
+      } catch {
+        /* ignore */
+      }
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return orders.map((order: any, index: number) => {
       // Новый формат: items[] (вместо старых selectFoods/allOrders)
@@ -224,6 +405,19 @@ class ApiService {
           cancelledAt: item.cancelledAt,
           cancelledBy: item.cancelledBy,
           cancelReason: item.cancelReason,
+          // Soatlik taom (PlayStation/bilyard) — daqiqali proratsiya uchun
+          // kerakli maydonlar. Avval bular tashlab yuborilardi → renderer
+          // item soatlik ekanini bilmay, narx 0 chiqardi.
+          isHourly: item.isHourly === true,
+          // Soatlik rate = taom JORIY narxi (kesh); statik qiymat zaxira.
+          hourlyPrice:
+            item.isHourly === true
+              ? Number(_fpm[foodIdOf(item)]) || Number(item.hourlyPrice) || 0
+              : Number(item.hourlyPrice) || 0,
+          hourlyStartedAt: item.hourlyStartedAt,
+          hourlyStoppedAt: item.hourlyStoppedAt,
+          hourlyFinalAmount: item.hourlyFinalAmount,
+          addedAt: item.addedAt,
         }));
 
       const tableNumber = order.tableId?.number || order.tableNumber || 0;
@@ -236,8 +430,10 @@ class ApiService {
       // Если backend не возвращает суммы, считаем на frontend
       // Не учитываем отменённые элементы
       const activeItems = items.filter((item: { status: string; isCancelled?: boolean }) => item.status !== 'cancelled' && !item.isCancelled);
-      // Всегда считаем по активным элементам (отменённые не учитываются)
-      const subtotal = activeItems.reduce((sum: number, item: { price: number; quantity: number }) => sum + item.price * item.quantity, 0);
+      // Всегда считаем по активным элементам (отменённые не учитываются).
+      // Soatlik item'lar DAQIQALI hisoblanadi (jonli) — itemLineTotal.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const subtotal = activeItems.reduce((sum: number, item: any) => sum + itemLineTotal(item), 0);
       // Для сабой сервисного сбора нет
       // Сервисный сбор отключен по всей системе
       const serviceChargePercent = 0;
@@ -266,6 +462,10 @@ class ApiService {
         isOffline,
         orderType: orderType,
         saboyNumber: order.saboyNumber || order.orderNumber,
+        tableId:
+          (order.tableId && typeof order.tableId === 'object'
+            ? order.tableId._id
+            : order.tableId) || '',
         tableNumber,
         tableName: isSaboy ? 'Сабой' : tableName,
         items,
@@ -656,7 +856,8 @@ class ApiService {
       saboyNumber: o?.orderNumber || 0,
       grandTotal: o?.finalTotal || o?.grandTotal || 0,
       // To'liq order obyekti — Dashboard state'iga darhol qo'shish uchun.
-      order: o && o._id ? (o as Order) : undefined,
+      // Backend response → Dashboard formatga moslashtirish (crash'siz).
+      order: o && o._id ? mapBackendOrderToDashboard(o) : undefined,
     };
   }
 
@@ -693,7 +894,12 @@ class ApiService {
     tableId: string,
     waiterId: string | undefined,
     items: { foodId: string; name: string; price: number; quantity: number }[],
+    meta?: { tableName?: string; tableNumber?: number; waiterName?: string },
   ): Promise<{ success: boolean; orderNumber: number; order?: Order; isNewOrder?: boolean }> {
+    // MUHIM: nom (tableName/tableNumber/waiterName) ham yuboramiz. Offline'da
+    // local-server mirror bo'sh/eskirgan bo'lsa, faqat id'dan stol/ofitsiant
+    // topolmay "Стол 0 / Неизвестно" saqlanib qolardi — shu nomlarni
+    // zaxira sifatida ishlatadi (mirror'ga qaram bo'lmaydi).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const data = await this.request<any>('/api/orders', {
       method: 'POST',
@@ -701,16 +907,21 @@ class ApiService {
         tableId,
         waiterId: waiterId || undefined,
         orderType: 'dine-in',
+        tableName: meta?.tableName || undefined,
+        tableNumber: meta?.tableNumber ?? undefined,
+        waiterName: meta?.waiterName || undefined,
         items: items.map((i) => ({ foodId: i.foodId, name: i.name, price: i.price, quantity: i.quantity })),
       }),
     });
     const o = data.data || data.order || data;
-    // To'liq order obyektini ham qaytaramiz — yangi yaratilgan zakaz darhol
-    // Dashboard state'iga qo'shilsin (loadData/getOrders race condition'siz).
+    // Backend response Mongoose order — populated waiterId/tableId, lekin
+    // Dashboard.tsx 'Order' tipini kutadi (waiter.name, tableName, items).
+    // Optimistic add qilishdan oldin minimal mapping qilamiz — aks holda
+    // OrderCard `order.waiter.name` da crash bo'ladi.
     return {
       success: data.success !== false,
       orderNumber: o?.orderNumber || 0,
-      order: o && o._id ? (o as Order) : undefined,
+      order: o && o._id ? mapBackendOrderToDashboard(o) : undefined,
       isNewOrder: data.isNewOrder !== false,
     };
   }
@@ -735,6 +946,17 @@ class ApiService {
           categoryName: category.name,
         });
       }
+    }
+
+    // Soatlik rate uchun foodId→price keshi (getOrders shundan oladi).
+    try {
+      const pm: Record<string, number> = {};
+      for (const f of foods) if (f._id && f.price > 0) pm[f._id] = f.price;
+      if (typeof window !== 'undefined') {
+        window.localStorage?.setItem('foodPriceMap', JSON.stringify(pm));
+      }
+    } catch {
+      /* ignore */
     }
 
     return foods;

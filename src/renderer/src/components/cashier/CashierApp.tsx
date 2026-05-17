@@ -3,9 +3,10 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useAuth } from '@/context/AuthContext';
-import { api } from '@/services/api';
+import { api, getSyncStatus } from '@/services/api';
 import { PrinterAPI } from '@/services/printer';
 import { Order, DailySummary, PaymentType, PaymentSplit, PartialPaymentResult, Shift } from '@/types';
+import { itemLineTotal } from '@/utils/hourly';
 import { T } from '@/lib/theme';
 import { Header, SideNav, Screen } from './shell';
 import { Numpad } from './Numpad';
@@ -56,7 +57,8 @@ async function printOrderReceipt(order: Order, restaurantName: string, silent: b
     if (!silent) alert('Нет блюд для печати — все позиции уже оплачены или отменены.');
     return;
   }
-  const printSubtotal = itemsForPrint.reduce((s, i) => s + i.price * i.quantity, 0);
+  // Soatlik item — DAQIQALI hisoblangan summa (chekda 0 emas, real narx).
+  const printSubtotal = itemsForPrint.reduce((s, i) => s + itemLineTotal(i), 0);
   let hourlyCharge = 0;
   let hourlyHours = 0;
   if (!isFullyPaid && order.hasHourlyCharge && order.hourlyChargeAmount && order.hourlyChargeAmount > 0) {
@@ -73,7 +75,11 @@ async function printOrderReceipt(order: Order, restaurantName: string, silent: b
       orderNumber: order.orderNumber,
       tableName: order.tableName,
       waiterName: order.waiter.name,
-      items: itemsForPrint.map((i) => ({ name: i.name, quantity: i.quantity, price: i.price })),
+      items: itemsForPrint.map((i) =>
+        i.isHourly
+          ? { name: i.name, quantity: 1, price: itemLineTotal(i) }
+          : { name: i.name, quantity: i.quantity, price: i.price },
+      ),
       subtotal: printSubtotal,
       serviceFee: 0,
       hourlyCharge: hourlyCharge > 0 ? hourlyCharge : undefined,
@@ -112,6 +118,20 @@ export function CashierApp() {
   const [screen, setScreenState] = useState<Screen>('orders');
   const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
   const [mergeSelection, setMergeSelection] = useState<string[]>([]);
+
+  // Sync overlay state — offline → online o'tishda local-server outbox'ni
+  // VPS'ga jo'natayotgan paytda foydalanuvchi orderlarning "birin-ketin"
+  // paydo bo'lishini ko'rmaslik uchun "Синхронизация…" overlay.
+  const [syncing, setSyncing] = useState(false);
+  const [syncPending, setSyncPending] = useState(0);
+  // Sync tugagandan keyin qolgan unsynced ops (failed retry holatida) — pastdagi
+  // banner orqali foydalanuvchini xabardor qiladi. Hech narsa "yashirin" qolmasin.
+  const [syncWarning, setSyncWarning] = useState<{ count: number; message: string } | null>(null);
+  // Filial sinxronlash flag'i (boshqa POS yoki local-server outbox flush)
+  // — VPS'dan `branch:sync_started` eventi kelsa true bo'ladi. Bu vaqtda
+  // order eventlarini IGNORE qilamiz (flicker yo'q). `branch:sync_completed`
+  // kelganda false → loadData bitta fresh state oladi.
+  const branchSyncingRef = useRef(false);
 
   const [audio] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -191,11 +211,28 @@ export function CashierApp() {
       const ordersData = await api.getOrders(currentShiftId);
       // Smena aniqlanmay BO'SH kelsa, oldingi ro'yxatni o'chirmaymiz
       // (online'da ekran kutilmaganda bo'shab qolmasin).
-      setOrders((prev) =>
-        Array.isArray(ordersData) && (ordersData.length > 0 || currentShiftId || prev.length === 0)
-          ? ordersData
-          : prev,
-      );
+      setOrders((prev) => {
+        if (!Array.isArray(ordersData)) return prev;
+        const canOverwrite = ordersData.length > 0 || currentShiftId || prev.length === 0;
+        if (!canOverwrite) return prev;
+
+        // OPTIMISTIC ORDER GRACE WINDOW — handleOrderCreated yangi qo'shilgan
+        // order'ga `_optimistic` timestamp qo'yadi. Agar VPS hali bu order'ni
+        // qaytarmagan bo'lsa (Mongo replica lag), 60 soniya ichida saqlab
+        // qolamiz. 60s'dan keyin agar VPS'da hali ham yo'q bo'lsa — olib
+        // tashlanadi (haqiqatan yaratilmagan).
+        const GRACE_MS = 60_000;
+        const now = Date.now();
+        const vpsIds = new Set(ordersData.map((o) => o._id));
+        const optimisticOrphans = prev.filter((o) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const ts = (o as any)._optimistic;
+          return typeof ts === 'number' && now - ts < GRACE_MS && !vpsIds.has(o._id);
+        });
+        return optimisticOrphans.length > 0
+          ? [...optimisticOrphans, ...ordersData]
+          : ordersData;
+      });
       // Summary — ikkilamchi: xato bersa ham orderlarga ta'sir qilmaydi.
       api
         .getDailySummary(currentShiftId)
@@ -226,8 +263,19 @@ export function CashierApp() {
     });
     socket.on('disconnect', () => setIsConnected(false));
 
-    const refresh = () => loadData();
+    // Filial sinxronlash paytida event'larni IGNORE qilamiz — flicker yo'q.
+    // Sync tugagach loadData() yagona chaqiriladi (fresh state).
+    const refresh = () => {
+      if (branchSyncingRef.current) return;
+      loadData();
+    };
     const refreshSound = () => {
+      if (branchSyncingRef.current) {
+        // Yangi order keldi (sync paytida) — ovoz chiqaradi-yu, lekin reload
+        // qilmaymiz. Sync tugaganda bitta refresh bilan ko'rinadi.
+        audio?.play().catch(() => {});
+        return;
+      }
       loadData();
       audio?.play().catch(() => {});
     };
@@ -258,6 +306,24 @@ export function CashierApp() {
     socket.on('order:cancelled', refresh);
     socket.on('order:paid', refresh);
 
+    // Filial sinxronlash (local-server outbox flush boshlandi/tugadi) —
+    // overlay ko'rsatamiz va order eventlarini ignore qilamiz, sync tugagach
+    // bitta fresh loadData() bilan to'liq state'ni olamiz (flicker yo'q).
+    socket.on('branch:sync_started', (data) => {
+      console.log('[socket] branch:sync_started', data);
+      branchSyncingRef.current = true;
+      setSyncing(true);
+      setSyncPending(Number(data?.pending) || 0);
+    });
+    socket.on('branch:sync_completed', (data) => {
+      console.log('[socket] branch:sync_completed', data);
+      branchSyncingRef.current = false;
+      setSyncing(false);
+      setSyncPending(0);
+      // Bitta fresh state — flicker yo'q.
+      loadData();
+    });
+
     socket.on('shift:opened', (data) => {
       setActiveShift(data.shift);
       setShiftLoaded(true);
@@ -278,19 +344,28 @@ export function CashierApp() {
       audio?.play().catch(() => {});
       if (typeof window !== 'undefined' && localStorage.getItem('autoprint-check') === '0') return;
 
-      // Дедуп: тот же запрос (reconnect / повторный emit / несколько
-      // слушателей) не печатается повторно в течение 25 секунд.
-      const dedupKey = String(
-        data.requestId || data.checkId || `${data.orderId}:${data.requestedAt || ''}`,
-      );
+      // Дедуп: backend printData'da requestId/checkId YO'Q, har chaqiruvda
+      // yangi requestedAt. Event 'cashier'+'admin' room'ga, reconnect'da
+      // yoki qayta-emit'da bir necha marta kelishi mumkin → har xil
+      // requestedAt → eski kalit ushlamasdi (ikki marta bosilardi).
+      // Endi FAQAT orderId bo'yicha: bitta order uchun 30s ichida bitta
+      // prechek (qayta bosish kerak bo'lsa — kassada "Чек" tugmasi bor).
+      const dedupKey = `pc:${String(data.orderId || '')}`;
       const now = Date.now();
       const seen = printedChecksRef.current;
       const last = seen.get(dedupKey);
-      if (last && now - last < 25000) return;
+      if (last && now - last < 30000) return;
       seen.set(dedupKey, now);
       for (const [k, ts] of seen) if (now - ts > 300000) seen.delete(k);
 
-      const localOrder = ordersRef.current.find((o) => o._id === data.orderId);
+      // Hourly TO'G'RI hisoblanishi uchun lokal order kerak. Event orderlar
+      // yuklanmasdan kelsa, qisqa kutib bir marta qayta qaraymiz — aks holda
+      // backend'ning XOM (hourly=0) ma'lumotidan "0 ₸" chek chiqardi.
+      let localOrder = ordersRef.current.find((o) => o._id === data.orderId);
+      if (!localOrder) {
+        await new Promise((r) => setTimeout(r, 900));
+        localOrder = ordersRef.current.find((o) => o._id === data.orderId);
+      }
       let itemsForPrint: { name: string; quantity: number; price: number }[];
       let subtotal: number;
       let hourlyCharge = 0;
@@ -301,8 +376,13 @@ export function CashierApp() {
           (i) => i.status !== 'cancelled' && !i.isCancelled && !i.isDeleted && i.isPaid !== true,
         );
         if (unpaidItems.length === 0) return;
-        itemsForPrint = unpaidItems.map((i) => ({ name: i.name, quantity: i.quantity, price: i.price }));
-        subtotal = unpaidItems.reduce((s, i) => s + i.price * i.quantity, 0);
+        // Soatlik item — DAQIQALI hisoblangan summa (chekda 0 emas).
+        itemsForPrint = unpaidItems.map((i) =>
+          i.isHourly
+            ? { name: i.name, quantity: 1, price: itemLineTotal(i) }
+            : { name: i.name, quantity: i.quantity, price: i.price },
+        );
+        subtotal = unpaidItems.reduce((s, i) => s + itemLineTotal(i), 0);
         if (localOrder.hasHourlyCharge && localOrder.hourlyChargeAmount && localOrder.hourlyChargeAmount > 0) {
           const diffH = (Date.now() - new Date(localOrder.createdAt).getTime()) / 3600000;
           hourlyHours = Math.floor(diffH) + 1;
@@ -353,31 +433,110 @@ export function CashierApp() {
   }, [loadData]);
 
   // Офлайн-изменения НЕ приходят через socket.io VPS (их там ещё нет).
-  // Поэтому: (1) перечитываем при возврате online (mode:changed из main),
-  // (2) страховочный опрос каждые 10с — экраны сами обновляются и офлайн
-  // (локальная база), и сразу после восстановления связи.
+  // Поэтому:
+  //   1. Mode 'online'ga o'tganda local-server outbox sync'ini KUTAMIZ
+  //      (polling /sync/status). Sync paytida overlay ko'rsatamiz, reload
+  //      qilmaymiz — natija birdaniga keladi ("birin-ketin" yo'qoladi).
+  //   2. Страховочный опрос har 10s — экраны sami обновляются.
   useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const w = typeof window !== 'undefined' ? (window as any).pos : null;
-    let t: ReturnType<typeof setTimeout> | undefined;
+    let pollSyncT: ReturnType<typeof setTimeout> | undefined;
     let off: (() => void) | undefined;
+
+    const waitForSyncThenReload = async (maxWaitMs = 15_000) => {
+      // Mantiq: avval flush BOSHLANISHINI kutamiz (isFlushing=true ko'rinishi).
+      // Keyin flush TUGASHINI kutamiz (isFlushing=true → false transition).
+      // Tugagandan keyin DARHOL overlay yopiladi va reload bo'ladi.
+      // Pending qoldi-yu xato yo'q (network glitch) — failed sifatida banner
+      // ko'rsatamiz, lekin foydalanuvchini ko'p kuttirmaymiz.
+      const start = Date.now();
+      setSyncing(true);
+      setSyncWarning(null);
+
+      let seenFlushing = false; // hech bo'lmasa bir marta isFlushing=true ko'rdikmi
+      let lastStatus: Awaited<ReturnType<typeof getSyncStatus>> = null;
+
+      while (Date.now() - start < maxWaitMs) {
+        const st = await getSyncStatus();
+        if (!st) {
+          // local-server javob bermadi — chiqamiz, web rejim bo'lishi mumkin.
+          break;
+        }
+        lastStatus = st;
+        setSyncPending(st.pending + (st.isFlushing ? 1 : 0));
+
+        if (st.isFlushing) {
+          seenFlushing = true;
+        } else if (seenFlushing) {
+          // Flush boshlangan edi va endi tugadi — DARHOL chiqamiz.
+          break;
+        } else if (st.pending === 0) {
+          // Hali flush boshlanmagan-u, lekin queue ham bo'sh — kutmaymiz.
+          break;
+        }
+
+        await new Promise((r) => {
+          pollSyncT = setTimeout(r, 700);
+        });
+      }
+
+      // Agar pending qolgan bo'lsa (xato bergan ops) — banner ko'rsatamiz.
+      if (lastStatus && lastStatus.pending > 0) {
+        const errMsg = lastStatus.lastError?.message
+          ? `${lastStatus.lastError.operation} #${lastStatus.lastError.entityId.slice(-6)}: ${lastStatus.lastError.message}`
+          : 'Автоматический повтор через несколько секунд.';
+        setSyncWarning({ count: lastStatus.pending, message: errMsg });
+      } else {
+        setSyncWarning(null);
+      }
+
+      setSyncing(false);
+      setSyncPending(0);
+      // Endi to'liq state'ni tortib olamiz — orderlar TO'G'RI holatda chiqadi.
+      await loadData();
+    };
+
     try {
       off = w?.mode?.onChange?.((mode: string) => {
         if (mode === 'online') {
-          if (t) clearTimeout(t);
-          t = setTimeout(() => loadData(), 1500); // local-server flushOutbox
+          if (pollSyncT) clearTimeout(pollSyncT);
+          // Avval kichik kechikish — local-server'ga sync boshlashga vaqt.
+          setTimeout(() => waitForSyncThenReload(), 1500);
         }
       });
     } catch {
       /* ignore */
     }
-    const poll = setInterval(() => loadData(), 10000);
+    const poll = setInterval(() => {
+      // Sync paytida poll qilmaymiz — overlay tugashini kutamiz.
+      if (!syncing) loadData();
+    }, 10000);
+
+    // Banner aktiv bo'lsa — har 5 soniyada /sync/status tekshirib turamiz.
+    // Local-server flushOutbox o'zi qayta urinadi; pending=0 bo'lsa banner
+    // yopiladi va loadData() chaqiriladi (oxirgi order ham yangilanadi).
+    const warningPoll = setInterval(async () => {
+      if (syncing) return; // overlay aktiv, alohida poll mantiqi
+      if (!syncWarning) return;
+      const st = await getSyncStatus();
+      if (!st) return;
+      if (st.pending === 0) {
+        setSyncWarning(null);
+        loadData(); // qolgan o'zgarishlarni tortib olamiz
+      } else if (st.lastError) {
+        const msg = `${st.lastError.operation} #${st.lastError.entityId.slice(-6)}: ${st.lastError.message}`;
+        setSyncWarning({ count: st.pending, message: msg });
+      }
+    }, 5000);
     return () => {
       if (off) off();
-      if (t) clearTimeout(t);
+      if (pollSyncT) clearTimeout(pollSyncT);
       clearInterval(poll);
+      clearInterval(warningPoll);
     };
-  }, [loadData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadData, syncWarning]);
 
   // ─── Handlers (ported) ─────────────────────────────────────────────────────
   const handlePayment = useCallback(
@@ -465,15 +624,22 @@ export function CashierApp() {
   // Mongo replica eventual consistency / race tufayli yangi order Dashboard'da
   // ko'rinmasdi (povorga check ketgani holda). Endi: optimistic qo'shamiz,
   // keyin loadData() sync uchun.
+  //
+  // MUHIM: optimistic qo'shilgan order'ga `_optimistic` timestamp belgisi
+  // qo'shamiz — loadData() ichida VPS hali bu order'ni qaytarmagan bo'lsa
+  // (replica lag), uni overwrite paytida YO'QOTMAYMIZ (60s gracewindow).
+  // Avval shu yo'qolish kabina/dine-in orderda yuz berardi (1-zakaz ko'rinmas,
+  // 2-zakazdan keyin ikkalasi ham paydo bo'lardi).
   const handleOrderCreated = useCallback(
     (newOrder: Order) => {
+      const tagged = { ...newOrder, _optimistic: Date.now() } as Order;
       setOrders((prev) => {
         const idx = prev.findIndex((o) => o._id === newOrder._id);
-        if (idx === -1) return [newOrder, ...prev];
+        if (idx === -1) return [tagged, ...prev];
         // Allaqachon mavjud bo'lsa (mas. mavjud orderga item qo'shildi) —
         // yangilangan obyektga almashtiramiz, dublikat qilmaymiz.
         const next = prev.slice();
-        next[idx] = newOrder;
+        next[idx] = tagged;
         return next;
       });
       // Backend bilan to'liq sync uchun fon rejimda yangilash. Race'dan keyin
@@ -607,6 +773,119 @@ export function CashierApp() {
         {screen === 'shiftClose' && <ShiftCloseScreen ctx={ctx} />}
       </div>
       <Numpad open={numpadOpen} onClose={() => setNumpadOpen(false)} />
+
+      {/* Warning banner — overlay yopilgandan keyin pending qolsa. */}
+      {syncWarning && !syncing && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: 18,
+            right: 18,
+            zIndex: 9998,
+            background: '#fff4e0',
+            border: '2px solid #e09020',
+            color: '#5a3500',
+            padding: '14px 18px',
+            maxWidth: 460,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 6,
+            boxShadow: '0 6px 22px rgba(0,0,0,0.18)',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+            <div style={{ fontWeight: 900, fontSize: 14, letterSpacing: 0.3 }}>
+              ⚠ Не синхронизировано: {syncWarning.count}
+            </div>
+            <button
+              onClick={() => setSyncWarning(null)}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: 18,
+                fontWeight: 800,
+                color: '#5a3500',
+                padding: '0 4px',
+              }}
+              aria-label="close"
+            >
+              ×
+            </button>
+          </div>
+          <div style={{ fontSize: 12, opacity: 0.85, lineHeight: 1.4 }}>
+            {syncWarning.message}
+          </div>
+          <div style={{ fontSize: 11, opacity: 0.7 }}>
+            Автоматический повтор каждые несколько секунд.
+          </div>
+        </div>
+      )}
+
+      {/* Sync overlay — offline→online o'tishda outbox bo'shaguncha. */}
+      {syncing && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(20, 18, 14, 0.55)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            backdropFilter: 'blur(4px)',
+            WebkitBackdropFilter: 'blur(4px)',
+          }}
+        >
+          <div
+            style={{
+              background: T.surface,
+              border: `2px solid ${T.cta}`,
+              padding: '34px 44px',
+              minWidth: 380,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 14,
+              boxShadow: '0 20px 50px rgba(0,0,0,0.3)',
+            }}
+          >
+            <div
+              style={{
+                width: 56,
+                height: 56,
+                border: `5px solid ${T.border}`,
+                borderTopColor: T.cta,
+                borderRadius: '50%',
+                animation: 'sync-spin 0.9s linear infinite',
+              }}
+            />
+            <style>{`@keyframes sync-spin { to { transform: rotate(360deg); } }`}</style>
+            <div style={{ fontSize: 22, fontWeight: 900, color: T.text, letterSpacing: 0.4 }}>
+              Синхронизация…
+            </div>
+            <div style={{ fontSize: 14, color: T.textMuted, textAlign: 'center', lineHeight: 1.5 }}>
+              Соединение восстановлено. Отправляем оффлайн-изменения на сервер.
+              <br />
+              Подождите, не закрывайте окно.
+            </div>
+            {syncPending > 0 && (
+              <div
+                style={{
+                  marginTop: 6,
+                  padding: '6px 14px',
+                  background: T.panelStrong,
+                  fontSize: 14,
+                  fontWeight: 800,
+                  color: T.text,
+                }}
+              >
+                Осталось: {syncPending}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

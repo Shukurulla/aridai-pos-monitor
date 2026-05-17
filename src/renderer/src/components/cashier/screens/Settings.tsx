@@ -11,6 +11,75 @@ export function SettingsScreen({ ctx }: { ctx: ScreenCtx }) {
   const [checking, setChecking] = useState(false);
   const [testing, setTesting] = useState(false);
 
+  // ─── Local Server Hub URL (LAN — boshqa pos-monitor'lar ulanishi uchun) ───
+  // Foydalanuvchi qo'lda kiritadi (mas. "http://192.168.1.50:3011"). Bo'sh —
+  // o'zining localhost:3011 ishlatiladi (default xulq). Saqlash + reload.
+  const DEFAULT_HUB = 'http://localhost:3011';
+  const [hubUrl, setHubUrl] = useState<string>('');
+  const [hubSaving, setHubSaving] = useState(false);
+  const [hubTesting, setHubTesting] = useState(false);
+  const [hubReachable, setHubReachable] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem('hub-url') || '';
+      setHubUrl(stored);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const normalizedHub = (value: string) => value.trim().replace(/\/+$/, '');
+
+  const testHub = async (url: string) => {
+    setHubTesting(true);
+    setHubReachable(null);
+    try {
+      const base = normalizedHub(url) || DEFAULT_HUB;
+      // Local-server hub uchun `/health` endpoint mavjud (api-server.js 119:
+      // `app.get('/health', ...)`) — offline'da ham ishlaydi, VPS'ga
+      // forwarding qilinmaydi. Bu eng aniq ishonchli health check.
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 5000);
+      const res = await fetch(`${base}/health`, { signal: ctl.signal });
+      clearTimeout(t);
+      setHubReachable(res.ok);
+      return res.ok;
+    } catch {
+      setHubReachable(false);
+      return false;
+    } finally {
+      setHubTesting(false);
+    }
+  };
+
+  const saveHub = async () => {
+    setHubSaving(true);
+    try {
+      const value = normalizedHub(hubUrl);
+      if (value) {
+        // Format validatsiya — http:// yoki https:// bilan boshlanishi kerak.
+        if (!/^https?:\/\//i.test(value)) {
+          alert("URL 'http://' yoki 'https://' bilan boshlanishi kerak");
+          return;
+        }
+        window.localStorage.setItem('hub-url', value);
+      } else {
+        window.localStorage.removeItem('hub-url');
+      }
+      if (confirm('Hub URL saqlandi. Ilovani qayta yuklash kerak.\nHozir qayta yuklaymizmi?')) {
+        window.location.reload();
+      }
+    } finally {
+      setHubSaving(false);
+    }
+  };
+
+  const resetHub = () => {
+    setHubUrl('');
+    setHubReachable(null);
+  };
+
   const check = async () => {
     setChecking(true);
     try {
@@ -87,7 +156,62 @@ export function SettingsScreen({ ctx }: { ctx: ScreenCtx }) {
             overflow: 'hidden',
           }}
         >
-          <SectionTitle>Принтер для чеков</SectionTitle>
+          <SectionTitle>Local Server (Hub)</SectionTitle>
+          <div style={{ fontSize: 13, color: T.textMuted, lineHeight: 1.5 }}>
+            URL local-server hub'iga (port 3011). Bo'sh qoldirsangiz —
+            <b> localhost</b> (shu kompyuter). Boshqa POS'da local-server bo'lsa,
+            uning LAN IP'sini kiriting: <code>http://192.168.x.x:3011</code>.
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input
+              value={hubUrl}
+              onChange={(e) => {
+                setHubUrl(e.target.value);
+                setHubReachable(null);
+              }}
+              placeholder={DEFAULT_HUB}
+              style={{
+                flex: 1,
+                height: 48,
+                padding: '0 14px',
+                fontSize: 15,
+                fontFamily: T.font,
+                background: T.panel,
+                border: `1px solid ${T.border}`,
+                color: T.text,
+                outline: 'none',
+              }}
+            />
+            {hubReachable !== null && (
+              <div
+                style={{
+                  padding: '0 12px',
+                  height: 48,
+                  display: 'flex',
+                  alignItems: 'center',
+                  background: hubReachable ? T.servedBg : T.cancelledBg,
+                  color: hubReachable ? T.served : T.cancelled,
+                  fontSize: 13,
+                  fontWeight: 800,
+                }}
+              >
+                {hubReachable ? 'OK' : 'НЕДОСТУПЕН'}
+              </div>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <Btn onClick={() => testHub(hubUrl)} fullWidth height={48} disabled={hubTesting}>
+              <NavIcon kind="settings" /> {hubTesting ? 'Проверка…' : 'Проверить'}
+            </Btn>
+            <Btn onClick={saveHub} fullWidth height={48} disabled={hubSaving}>
+              {hubSaving ? 'Сохранение…' : 'Сохранить и перезагрузить'}
+            </Btn>
+            <Btn onClick={resetHub} fullWidth height={48}>
+              По умолчанию (localhost)
+            </Btn>
+          </div>
+
+          <SectionTitle style={{ marginTop: 12 }}>Принтер для чеков</SectionTitle>
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div style={{ fontSize: 15, color: T.text, lineHeight: 1.5 }}>
               Печать управляется приложением <b>Local Server</b>. Чеки оплаты и

@@ -89,6 +89,7 @@ export interface Order {
   isOffline?: boolean;
   orderType?: OrderType;
   saboyNumber?: number;
+  tableId?: string;
   tableNumber: number;
   tableName: string;
   items: OrderItem[];
