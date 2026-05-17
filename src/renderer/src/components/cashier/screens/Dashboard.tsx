@@ -13,6 +13,17 @@ import { computeHourlyForItem, formatDuration, calculateHourlyCharge } from '@/u
 // shu yerdan re-export qilamiz.
 export { computeHourlyForItem, formatDuration, calculateHourlyCharge };
 
+// Order vaqti: HH:MM:SS DD.MM.YYYY
+const fmtDT = (s?: string) => {
+  if (!s) return '';
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return '';
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())} ${p(d.getDate())}.${p(
+    d.getMonth() + 1,
+  )}.${d.getFullYear()}`;
+};
+
 // Derive display status (StatusKey) from order + items
 export const orderStatusKey = (order: Order): StatusKey => {
   if (order.status === 'cancelled') return 'cancelled';
@@ -137,6 +148,11 @@ function OrderCard({
         <div style={{ fontSize: 12, color: T.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {order.isOffline ? 'Офлайн' : `№${order.orderNumber}`} · {order.waiter?.name || '—'} · {itemCount} блюд
         </div>
+        {fmtDT(order.createdAt) && (
+          <div style={{ fontSize: 11, color: T.textMuted, marginTop: 1, fontVariantNumeric: 'tabular-nums' }}>
+            {fmtDT(order.createdAt)}
+          </div>
+        )}
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginTop: 2 }}>
           <span style={{ fontSize: 12, color: T.textMuted, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.4 }}>
             {isPaid ? 'Оплачено' : 'К оплате'}

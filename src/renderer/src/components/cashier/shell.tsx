@@ -3,6 +3,9 @@
 import { useState, useEffect } from 'react';
 import { T, NavIcon, STATUS, StatusKey, fmt, IconKind } from '@/lib/theme';
 import { DailySummary, Shift, User, Restaurant, Branch } from '@/types';
+// Logo'ni MODUL sifatida import qilamiz — "/aridai-logo.png" public'da yo'q
+// edi (renderer root src/renderer, public yo'q) → logo ko'rinmasdi.
+import logoUrl from '@/assets/aridai-logo.png';
 
 export type Screen =
   | 'login'
@@ -194,7 +197,7 @@ export const Header = ({
           }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/aridai-logo.png" alt="Aridai" style={{ width: 40, height: 40, display: 'block' }} />
+          <img src={logoUrl} alt="Aridai" style={{ width: 40, height: 40, display: 'block' }} />
         </div>
         <div>
           <div style={{ fontSize: 19, fontWeight: 800, lineHeight: 1.05 }}>AridaiPOS</div>

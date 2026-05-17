@@ -1,6 +1,6 @@
 {
   "name": "aridai-pos-monitor",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "AridaiPOS Monitor — Electron POS terminal (webview online + native offline UI)",
   "main": "out/main/index.js",
   "private": true,

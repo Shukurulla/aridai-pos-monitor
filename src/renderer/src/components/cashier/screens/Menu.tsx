@@ -616,13 +616,12 @@ export function NewOrderScreen({ ctx }: { ctx: ScreenCtx }) {
             { tableName: table.title, tableNumber: table.number, waiterName: waiter?.name },
           );
           if (res.success) {
-            // Optimistic update — backend qaytargan to'liq order'ni darhol
-            // state'ga qo'shamiz. Avval shunchaki `await ctx.reload()` edi —
-            // lekin Mongo replica race tufayli yangi order ko'rinmasdi (povorga
-            // check ketgani holda). Endi: state'ga darhol qo'shamiz, keyin sync.
+            // TEZKOR: optimistik order'ni darhol qo'shib, ekranni DARHOL
+            // ochamiz. reload (getActiveShift+getOrders proksi ~sekin) FONDA
+            // ishlaydi — avval `await ctx.reload()` butun oqimni ~3s ushlardi.
             if (res.order) ctx.onOrderCreated(res.order);
-            await ctx.reload();
             ctx.go('orders');
+            ctx.reload();
           } else {
             alert('Не удалось создать заказ');
           }
@@ -724,6 +723,11 @@ export function NewOrderScreen({ ctx }: { ctx: ScreenCtx }) {
                           <div style={{ fontSize: 19, fontWeight: 800, color: busy ? T.cancelled : T.text }}>
                             {t.title}
                           </div>
+                          {t.categoryTitle && (
+                            <div style={{ fontSize: 12, fontWeight: 700, marginTop: 2, color: T.textMuted }}>
+                              {t.categoryTitle}
+                            </div>
+                          )}
                           <div
                             style={{
                               fontSize: 13,

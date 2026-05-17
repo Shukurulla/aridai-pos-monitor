@@ -207,8 +207,7 @@ function injectNativeOverlays() {
   render()
 }
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', injectNativeOverlays)
-} else {
-  injectNativeOverlays()
-}
+// Suzuvchi zoom/Обновления overlay O'CHIRILDI — ekran ustida turishi
+// noqulay edi. Endi ular "Настройки" sahifasida (window.pos.zoom/updates).
+// injectNativeOverlays() funksiyasi zaxira sifatida qoldirildi, chaqirilmaydi.
+void injectNativeOverlays

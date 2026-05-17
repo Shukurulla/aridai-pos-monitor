@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { T, NavIcon } from '@/lib/theme';
 import { CTA } from '../shell';
+import logoUrl from '@/assets/aridai-logo.png';
 
 const formatPhone = (value: string) => {
   let digits = value.replace(/\D/g, '');
@@ -88,7 +89,7 @@ export function LoginScreen() {
           }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/aridai-logo.png" alt="Aridai" style={{ width: 120, height: 120, display: 'block' }} />
+          <img src={logoUrl} alt="Aridai" style={{ width: 120, height: 120, display: 'block' }} />
         </div>
         <div style={{ fontSize: 56, fontWeight: 900, lineHeight: 1.05, letterSpacing: -0.5 }}>AridaiPOS</div>
         <div style={{ fontSize: 20, color: 'rgba(255,255,255,0.7)', marginTop: 24, maxWidth: 440, lineHeight: 1.5 }}>

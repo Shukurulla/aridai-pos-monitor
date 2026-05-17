@@ -132,6 +132,21 @@ export function SettingsScreen({ ctx }: { ctx: ScreenCtx }) {
     return '';
   };
 
+  // ─── Масштаб экрана (Electron — window.pos.zoom). Avval suzuvchi
+  //     overlay edi (ekran ustida, noqulay) → endi shu yerda.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const Z = (typeof window !== 'undefined' ? (window as any).pos?.zoom : null) || null;
+  const [zoom, setZoom] = useState(1);
+  useEffect(() => {
+    if (!Z) return;
+    Z.get().then((f: number) => setZoom(Math.round((Number(f) || 1) * 100) / 100)).catch(() => {});
+  }, [Z]);
+  const applyZoom = (z: number) => {
+    const v = Math.min(2, Math.max(0.5, Math.round(z * 100) / 100));
+    setZoom(v);
+    Z?.set(v).catch(() => {});
+  };
+
   return (
     <div style={{ flex: 1, background: T.bg, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <SubHeader title="Настройки" onBack={() => ctx.go('orders')} />
@@ -285,6 +300,34 @@ export function SettingsScreen({ ctx }: { ctx: ScreenCtx }) {
                     Установить и перезапустить
                   </Btn>
                 )}
+              </div>
+            </>
+          )}
+
+          {Z && (
+            <>
+              <SectionTitle style={{ marginTop: 12 }}>Масштаб экрана</SectionTitle>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Btn onClick={() => applyZoom(zoom - 0.1)} height={52}>
+                  − Меньше
+                </Btn>
+                <div
+                  style={{
+                    minWidth: 80,
+                    textAlign: 'center',
+                    fontSize: 18,
+                    fontWeight: 900,
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {Math.round(zoom * 100)}%
+                </div>
+                <Btn onClick={() => applyZoom(zoom + 0.1)} height={52}>
+                  + Больше
+                </Btn>
+                <Btn onClick={() => applyZoom(1)} height={52}>
+                  Сброс 100%
+                </Btn>
               </div>
             </>
           )}
