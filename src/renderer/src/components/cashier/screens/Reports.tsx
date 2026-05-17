@@ -268,6 +268,103 @@ export function ReportsScreen({ ctx }: { ctx: ScreenCtx }) {
       }),
     );
 
+  // АКТ РЕАЛ — to'liq smena akti (sotilgan + bekor manfiy) + Итоговый отчёт
+  const printActReal = () =>
+    runPrint("act-real", async () => {
+      const sid = ctx.activeShift?._id;
+      const rep = report || (await api.getFullReport(sid));
+      const can = await api.getCancelledItems(sid);
+
+      type Row = { name: string; qty: number; price: number; sum: number };
+      const rows: Row[] = [];
+      (rep?.foods.items || []).forEach((f) =>
+        rows.push({ name: f.name, qty: f.totalQuantity, price: f.price, sum: f.totalRevenue }),
+      );
+      // Bekor (otkaz): foodName+narx bo'yicha agregatsiya — order VA item bekor.
+      const cm = new Map<string, Row>();
+      (can?.items || []).forEach((c) => {
+        const key = `${c.foodName}@@${c.price}`;
+        const e = cm.get(key) || { name: c.foodName, qty: 0, price: c.price, sum: 0 };
+        e.qty -= c.quantity;
+        e.sum -= c.total;
+        cm.set(key, e);
+      });
+      cm.forEach((v) => rows.push(v));
+      rows.sort((a, b) => a.name.localeCompare(b.name, "ru"));
+
+      const totQty = rows.reduce((s, r) => s + r.qty, 0);
+      const totSum = rows.reduce((s, r) => s + r.sum, 0);
+      const cancelledOrderIds = new Set((can?.items || []).map((c) => c.orderId));
+      const refusalPositions = (can?.items || []).reduce((s, c) => s - c.quantity, 0);
+
+      const pm = rep?.paymentMethods;
+      const payments: { name: string; sum: number }[] = [];
+      if (pm) {
+        if (pm.card.total) payments.push({ name: "Картой", sum: pm.card.total });
+        if (pm.cash.total) payments.push({ name: "Наличными", sum: pm.cash.total });
+        if (pm.click.total) payments.push({ name: "Click/Перевод", sum: pm.click.total });
+      }
+      const grand = rep?.sales.totalRevenue || 0;
+      const staff = (rep?.staff.waiters || []).map((w) => ({
+        name: w.name,
+        count: w.totalOrders,
+        service: w.serviceRevenue || 0,
+        sum: w.totalRevenue,
+      }));
+      const subs = (rep?.categories.items || []).map((c) => ({
+        name: c.name,
+        count: c.itemCount,
+        service: 0,
+        sum: c.totalRevenue,
+      }));
+      const subTotal = subs.reduce(
+        (a, s) => ({ count: a.count + s.count, service: 0, sum: a.sum + s.sum }),
+        { count: 0, service: 0, sum: 0 },
+      );
+      const orderPositions =
+        rep?.foods.totalSold ||
+        rows.filter((r) => r.qty > 0).reduce((s, r) => s + r.qty, 0);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const sh = ctx.activeShift as any;
+      const fmtDT = (d?: string) => (d ? new Date(d).toLocaleString("ru-RU") : "");
+
+      return PrinterAPI.printActReal({
+        printerName: "",
+        currency: "₸",
+        header: header("АКТ РЕАЛ"),
+        shift: {
+          from: fmtDT(sh?.openedAt || sh?.startTime || sh?.createdAt),
+          to: fmtDT(sh?.closedAt || sh?.endTime),
+        },
+        items: rows,
+        totals: { qty: totQty, sum: totSum },
+        summary: {
+          totalChecks: rep?.sales.totalChecks || 0,
+          orderPositions,
+          refusalChecks: cancelledOrderIds.size,
+          refusalPositions,
+          refusalSum: -(can?.totalCancelledValue || 0),
+          guests: rep?.sales.totalChecks || 0,
+          transfers: 0,
+          unlocks: 0,
+        },
+        payments,
+        paymentsTotal: grand,
+        staff,
+        subdivisions: subs,
+        subTotal,
+        clients: [
+          {
+            name: "Частное лицо",
+            checks: rep?.sales.totalChecks || 0,
+            orders: orderPositions,
+            sum: grand,
+            sumNoDiscount: grand,
+          },
+        ],
+      });
+    });
+
   const tabs: {
     id: Tab;
     label: string;
@@ -463,11 +560,22 @@ ${bodyHtml || "<p>Нет данных</p>"}
       }}
     >
       <SubHeader title="Отчёты по смене" onBack={() => ctx.go("orders")}>
-        {ctx.activeShift && (
-          <span style={{ fontSize: 15, color: T.textMuted, fontWeight: 700 }}>
-            Смена №{ctx.activeShift.shiftNumber}
-          </span>
-        )}
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          {ctx.activeShift && (
+            <span style={{ fontSize: 15, color: T.textMuted, fontWeight: 700 }}>
+              Смена №{ctx.activeShift.shiftNumber}
+            </span>
+          )}
+          <CTA
+            height={48}
+            fontSize={16}
+            onClick={printActReal}
+            disabled={printing !== null || !report}
+          >
+            <NavIcon kind="printer" color="#fff" />{" "}
+            {printing === "act-real" ? "Печать…" : "Отчёт (АКТ РЕАЛ)"}
+          </CTA>
+        </div>
       </SubHeader>
 
       <div

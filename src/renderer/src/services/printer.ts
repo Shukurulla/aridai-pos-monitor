@@ -225,8 +225,54 @@ export const PrinterAPI = {
    */
   async printWaiters(payload: WaitersPayload, printerName?: string): Promise<PrintResponse> {
     return postStructured('/print/waiters', payload, printerName);
+  },
+
+  /**
+   * АКТ РЕАЛ — to'liq smena akti (sotilgan taomlar + Итоговый отчёт).
+   * POST /print/act-real
+   */
+  async printActReal(payload: ActRealPayload, printerName?: string): Promise<PrintResponse> {
+    return postStructured('/print/act-real', payload, printerName);
   }
 };
+
+/* ---------- /print/act-real ---------- */
+export interface ActRealItem {
+  name: string;
+  qty: number;
+  price: number;
+  sum: number;
+}
+export interface ActRealPayload {
+  printerName: string;
+  header: PrintHeader;
+  currency: string;
+  shift?: { from?: string; to?: string };
+  items: ActRealItem[];
+  totals: { qty: number; sum: number };
+  summary: {
+    totalChecks: number;
+    orderPositions: number;
+    refusalChecks: number;
+    refusalPositions: number;
+    refusalSum: number;
+    guests: number;
+    transfers: number;
+    unlocks: number;
+  };
+  payments: { name: string; sum: number }[];
+  paymentsTotal: number;
+  staff: { name: string; count: number; service: number; sum: number }[];
+  subdivisions: { name: string; count: number; service: number; sum: number }[];
+  subTotal?: { count: number; service: number; sum: number };
+  clients: {
+    name: string;
+    checks: number;
+    orders: number;
+    sum: number;
+    sumNoDiscount: number;
+  }[];
+}
 
 // ==================================================================
 // Common types for new structured print API
