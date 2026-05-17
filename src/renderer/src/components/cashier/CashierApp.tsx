@@ -542,10 +542,22 @@ export function CashierApp() {
   const handlePayment = useCallback(
     async (orderId: string, paymentType: PaymentType, paymentSplit?: PaymentSplit, comment?: string) => {
       try {
+        // To'lovdan OLDINGI order (ekranda, stol/ofitsiant TO'G'RI).
+        // Backend to'lov javobida tableId/waiterId populate qilinmaydi va
+        // stol bo'shaydi → paidOrder'da "Стол 0"/"Неизвестно" bo'lib qoladi.
+        // Chek uchun stol/ofitsiantni avvalgi orderdan tiklaymiz.
+        const prevOrder = orders.find((o) => o._id === orderId);
         const paidOrder = await api.processPayment(orderId, paymentType, paymentSplit, comment);
         setOrders((prev) => prev.map((o) => (o._id === orderId ? paidOrder : o)));
+        const badTable = !paidOrder.tableName || /^\s*(Стол\s*0|Неизвест)/i.test(paidOrder.tableName);
+        const badWaiter = !paidOrder.waiter?.name || /Неизвест/i.test(paidOrder.waiter.name);
+        const forPrint = {
+          ...paidOrder,
+          tableName: badTable && prevOrder?.tableName ? prevOrder.tableName : paidOrder.tableName,
+          waiter: badWaiter && prevOrder?.waiter?.name ? prevOrder.waiter : paidOrder.waiter,
+        };
         // Оплачено → автоматически печатаем чек (Local Server направит на кассу)
-        printOrderReceipt(paidOrder, restaurant?.name || 'Ресторан', true);
+        printOrderReceipt(forPrint, restaurant?.name || 'Ресторан', true);
         await loadData();
       } catch (error) {
         const msg = error instanceof Error ? error.message : 'Оплата не выполнена';
@@ -559,7 +571,7 @@ export function CashierApp() {
         throw error;
       }
     },
-    [loadData, restaurant?.name],
+    [loadData, restaurant?.name, orders],
   );
 
   const handlePartialPayment = useCallback(
@@ -571,18 +583,28 @@ export function CashierApp() {
       comment?: string,
     ): Promise<PartialPaymentResult> => {
       try {
+        const prevOrder = orders.find((o) => o._id === orderId);
         const result = await api.processPartialPayment(orderId, itemIds, paymentType, paymentSplit, comment);
         setOrders((prev) => prev.map((o) => (o._id === orderId ? result.order : o)));
         // Частичная оплата → печатаем чек ТОЛЬКО на оплаченные позиции
         const ps = result.paymentSession;
         const o = result.order;
+        // To'lov javobida stol/ofitsiant yo'qolishi mumkin → avvalgi orderdan tiklaymiz.
+        const okTable =
+          o.tableName && !/^\s*(Стол\s*0|Неизвест)/i.test(o.tableName)
+            ? o.tableName
+            : prevOrder?.tableName || o.tableName;
+        const okWaiter =
+          o.waiter?.name && !/Неизвест/i.test(o.waiter.name)
+            ? o.waiter.name
+            : prevOrder?.waiter?.name || o.waiter?.name || '';
         if (ps && Array.isArray(ps.paidItems) && ps.paidItems.length > 0) {
           const sub = ps.paidItems.reduce((s, i) => s + i.price * i.quantity, 0);
           PrinterAPI.printPayment({
             orderId: o._id,
             orderNumber: o.orderNumber,
-            tableName: o.tableName,
-            waiterName: o.waiter.name,
+            tableName: okTable,
+            waiterName: okWaiter,
             items: ps.paidItems.map((i) => ({ name: i.foodName, quantity: i.quantity, price: i.price })),
             subtotal: ps.subtotal || sub,
             serviceFee: 0,
@@ -601,7 +623,7 @@ export function CashierApp() {
         throw error;
       }
     },
-    [loadData, restaurant?.name],
+    [loadData, restaurant?.name, orders],
   );
 
   const handlePrint = useCallback(
