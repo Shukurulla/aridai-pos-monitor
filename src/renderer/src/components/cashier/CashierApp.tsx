@@ -45,7 +45,12 @@ const EMPTY_SUMMARY: DailySummary = {
 
 // Чек оплаты: собирает данные из заказа и печатает через Local Server.
 // silent=true — авто-печать после оплаты (без alert при отсутствии блюд).
-async function printOrderReceipt(order: Order, restaurantName: string, silent: boolean) {
+async function printOrderReceipt(
+  order: Order,
+  restaurantName: string,
+  silent: boolean,
+  br: { en: boolean; pct: number; disc: number },
+) {
   const isFullyPaid = order.paymentStatus === 'paid';
   const itemsForPrint = order.items.filter((item) => {
     if (item.status === 'cancelled' || item.isCancelled) return false;
@@ -69,12 +74,22 @@ async function printOrderReceipt(order: Order, restaurantName: string, silent: b
     hourlyCharge = order.hourlyCharge || 0;
     hourlyHours = order.hourlyChargeHours || 0;
   }
-  // #1/#2: услуга% / chegирма% — order'dan (backend bilan AYNAN bir xil).
-  // Default 0 → chekda chiqmaydi, ИТОГО avvalgidek.
-  const _svcP = Number((order as { serviceChargePercent?: number }).serviceChargePercent || 0);
-  const _discP = Number((order as { discountPercent?: number }).discountPercent || 0);
-  const _svcFee = _svcP > 0 ? Math.round(printSubtotal * (_svcP / 100)) : 0;
-  const _discAmt = _discP > 0 ? Math.round(printSubtotal * (_discP / 100)) : 0;
+  // #1/#2: услуга% / chegirma%. To'langan order — backend hisoblagan
+  // qiymat (AYNAN). To'lanmagan/prechek — order'da % bo'lsa o'sha,
+  // bo'lmasa FILIAL sozlamasi (xizmat yoqilgandan OLDIN yaratilgan
+  // orderlarga ham услуга qo'shilsin — backend ham to'lovda shunday qiladi).
+  const oSvc = Number((order as { serviceCharge?: number }).serviceCharge || 0);
+  const oSvcP = Number((order as { serviceChargePercent?: number }).serviceChargePercent || 0);
+  const oDisc = Number((order as { discount?: number }).discount || 0);
+  const oDiscP = Number((order as { discountPercent?: number }).discountPercent || 0);
+  const eSvcP = oSvcP > 0 ? oSvcP : br.en ? br.pct : 0;
+  const eDiscP = oDiscP > 0 ? oDiscP : br.disc > 0 ? br.disc : 0;
+  const _svcP = eSvcP;
+  const _discP = eDiscP;
+  const _svcFee =
+    isFullyPaid && oSvc > 0 ? oSvc : eSvcP > 0 ? Math.round(printSubtotal * (eSvcP / 100)) : 0;
+  const _discAmt =
+    isFullyPaid && oDisc > 0 ? oDisc : eDiscP > 0 ? Math.round(printSubtotal * (eDiscP / 100)) : 0;
   try {
     const result = await PrinterAPI.printPayment({
       orderId: order._id,
@@ -167,6 +182,43 @@ export function CashierApp() {
   // Дедуп авто-печати прчека: один и тот же запрос (reconnect/повтор события)
   // не печатается дважды в течение окна.
   const printedChecksRef = useRef<Map<string, number>>(new Map());
+
+  // Filial услуга/chegirma sozlamasi (GLOBAL backend = manba). Chek/prechek
+  // shu bo'yicha hisoblanadi — order'da % hali bo'lmasa ham (eski orderlar).
+  // Ref orqali — socket handler eski closure'da ham eng so'nggi qiymatni o'qiydi.
+  const [brSvc, setBrSvc] = useState<{ en: boolean; pct: number; disc: number }>({
+    en: false,
+    pct: 0,
+    disc: 0,
+  });
+  const brSvcRef = useRef(brSvc);
+  useEffect(() => {
+    brSvcRef.current = brSvc;
+  }, [brSvc]);
+  useEffect(() => {
+    let alive = true;
+    const pull = () =>
+      api
+        .getRestaurantSettings()
+        .then((s) => {
+          if (!alive || !s) return;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const a = s as any;
+          setBrSvc({
+            en: a.serviceChargeEnabled === true,
+            pct: Number(a.serviceChargePercent) || 0,
+            disc: Number(a.discountPercent) || 0,
+          });
+        })
+        .catch(() => {});
+    pull();
+    // Sozlama boshqa terminalda o'zgarishi mumkin — vaqti-vaqti bilan yangilab turamiz.
+    const t = setInterval(pull, 60000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, []);
 
   // Restore persisted screen + current order
   useEffect(() => {
@@ -443,6 +495,15 @@ export function CashierApp() {
         }
       }
 
+      // услуга/chegirma — order'da % bo'lsa o'sha, bo'lmasa filial sozlamasi.
+      // Prechekda ham 10% услуга ko'rinishi kerak (backend to'lovda qo'shadi).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const _lo = localOrder as any;
+      const _br = brSvcRef.current;
+      const _svcP = Number(_lo?.serviceChargePercent || 0) || (_br.en ? _br.pct : 0);
+      const _discP = Number(_lo?.discountPercent || 0) || (_br.disc > 0 ? _br.disc : 0);
+      const _svcFee = _svcP > 0 ? Math.round(subtotal * (_svcP / 100)) : 0;
+      const _discAmt = _discP > 0 ? Math.round(subtotal * (_discP / 100)) : 0;
       try {
         await PrinterAPI.printPayment(
           {
@@ -452,10 +513,13 @@ export function CashierApp() {
             waiterName: data.waiterName || '',
             items: itemsForPrint,
             subtotal,
-            serviceFee: 0,
+            serviceFee: _svcFee,
+            serviceFeePercent: _svcP,
+            discount: _discAmt,
+            discountPercent: _discP,
             hourlyCharge: hourlyCharge > 0 ? hourlyCharge : undefined,
             hourlyHours: hourlyHours > 0 ? hourlyHours : undefined,
-            total: subtotal + hourlyCharge,
+            total: subtotal + hourlyCharge + _svcFee - _discAmt,
             paymentType: 'cash',
             restaurantName: restaurant?.name || 'Ресторан',
             date: new Date().toLocaleString('ru-RU'),
@@ -630,7 +694,7 @@ export function CashierApp() {
           waiter: badWaiter && prevOrder?.waiter?.name ? prevOrder.waiter : paidOrder.waiter,
         };
         // Оплачено → автоматически печатаем чек (Local Server направит на кассу)
-        printOrderReceipt(forPrint, restaurant?.name || 'Ресторан', true);
+        printOrderReceipt(forPrint, restaurant?.name || 'Ресторан', true, brSvcRef.current);
         await loadData();
       } catch (error) {
         const msg = error instanceof Error ? error.message : 'Оплата не выполнена';
@@ -673,15 +737,28 @@ export function CashierApp() {
             : prevOrder?.waiter?.name || o.waiter?.name || '';
         if (ps && Array.isArray(ps.paidItems) && ps.paidItems.length > 0) {
           const sub = ps.paidItems.reduce((s, i) => s + i.price * i.quantity, 0);
+          const ppSub = ps.subtotal || sub;
+          // услуга/chegirma — order'da % bo'lsa o'sha, bo'lmasa filial sozlamasi.
+          // Qisman to'lovda ham shu qism summasiga услуга qo'shiladi.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const _o = o as any;
+          const _br = brSvcRef.current;
+          const _svcP = Number(_o?.serviceChargePercent || 0) || (_br.en ? _br.pct : 0);
+          const _discP = Number(_o?.discountPercent || 0) || (_br.disc > 0 ? _br.disc : 0);
+          const _svcFee = _svcP > 0 ? Math.round(ppSub * (_svcP / 100)) : 0;
+          const _discAmt = _discP > 0 ? Math.round(ppSub * (_discP / 100)) : 0;
           PrinterAPI.printPayment({
             orderId: o._id,
             orderNumber: o.orderNumber,
             tableName: okTable,
             waiterName: okWaiter,
             items: ps.paidItems.map((i) => ({ name: i.foodName, quantity: i.quantity, price: i.price })),
-            subtotal: ps.subtotal || sub,
-            serviceFee: 0,
-            total: ps.total || sub,
+            subtotal: ppSub,
+            serviceFee: _svcFee,
+            serviceFeePercent: _svcP,
+            discount: _discAmt,
+            discountPercent: _discP,
+            total: ppSub + _svcFee - _discAmt,
             paymentType: ps.paymentType || paymentType,
             restaurantName: restaurant?.name || 'Ресторан',
             date: new Date().toLocaleString('ru-RU'),
@@ -701,7 +778,7 @@ export function CashierApp() {
 
   const handlePrint = useCallback(
     async (order: Order) => {
-      await printOrderReceipt(order, restaurant?.name || 'Ресторан', false);
+      await printOrderReceipt(order, restaurant?.name || 'Ресторан', false, brSvcRef.current);
     },
     [restaurant?.name],
   );

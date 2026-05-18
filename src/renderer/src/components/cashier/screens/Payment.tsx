@@ -33,6 +33,12 @@ export function PaymentScreen({ ctx }: { ctx: ScreenCtx }) {
   // #2: shu order uchun chegирма tugmasi (backendga PATCH → qayta hisob)
   const [discOpen, setDiscOpen] = useState(false);
   const [chgBusy, setChgBusy] = useState(false);
+  // Filial sozlamasi (услуга on/off + %) — order'da stamp bo'lmagan
+  // (yaratilgan, to'lanmagan) order uchun OLDINDAN ko'rsatish. Backend
+  // to'lov payti AYNAN shu filial %ini stamp qiladi → divergensiya yo'q.
+  const [brSvcEn, setBrSvcEn] = useState(false);
+  const [brSvcPct, setBrSvcPct] = useState(0);
+  const [brDiscPct, setBrDiscPct] = useState(0);
 
   const allItems = useMemo(
     () => (order ? order.items.filter((i) => i.status !== 'cancelled' && !i.isDeleted) : []),
@@ -66,6 +72,22 @@ export function PaymentScreen({ ctx }: { ctx: ScreenCtx }) {
     if (!order) ctx.go('orders');
   }, [order, ctx]);
 
+  useEffect(() => {
+    let alive = true;
+    api
+      .getRestaurantSettings()
+      .then((s) => {
+        if (!alive) return;
+        setBrSvcEn(s.serviceChargeEnabled === true);
+        setBrSvcPct(Number(s.serviceChargePercent || 0));
+        setBrDiscPct(Number(s.discountPercent || 0));
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   if (!order) return null;
 
   const allPaid = unpaidItems.length === 0;
@@ -76,13 +98,20 @@ export function PaymentScreen({ ctx }: { ctx: ScreenCtx }) {
   const subtotal = itemsToPay.reduce((s, i) => s + itemLineTotal(i), 0);
   const { hours, charge } = calcHourly(order);
   const hourly = mode === 'full' ? charge : 0;
-  // #1/#2: услуга/chegирма — GLOBAL backend hisoblaydi. POS foiz
-  // HISOBLAMAYDI — backend bergan summalarni ko'rsatadi (admin panel,
-  // chek bilan AYNAN bir xil). subtotal jonli (soatlik) qoladi.
-  const svcPct = Number((order as { serviceChargePercent?: number }).serviceChargePercent || 0);
-  const discPct = Number((order as { discountPercent?: number }).discountPercent || 0);
-  const serviceFee = mode === 'full' ? Number((order as { serviceCharge?: number }).serviceCharge || 0) : 0;
-  const discountAmt = mode === 'full' ? Number((order as { discount?: number }).discount || 0) : 0;
+  // #1/#2: услуга/chegирма. Order'da STAMP bo'lsa (backend allaqachon
+  // hisoblagan) — o'shani ko'rsatamiz. STAMP yo'q (yaratilgan, to'lanmagan
+  // eski order) bo'lsa — FILIAL sozlamasidan OLDINDAN ko'rsatamiz; backend
+  // to'lov payti AYNAN shu filial %ini stamp qiladi (db6be06) → bir xil.
+  const oSvcPct = Number((order as { serviceChargePercent?: number }).serviceChargePercent || 0);
+  const oDiscPct = Number((order as { discountPercent?: number }).discountPercent || 0);
+  const oSvc = Number((order as { serviceCharge?: number }).serviceCharge || 0);
+  const oDisc = Number((order as { discount?: number }).discount || 0);
+  const svcPct = oSvcPct > 0 ? oSvcPct : brSvcEn ? brSvcPct : 0;
+  const discPct = oDiscPct > 0 ? oDiscPct : brDiscPct;
+  const serviceFee =
+    mode !== 'full' ? 0 : oSvc > 0 ? oSvc : svcPct > 0 ? Math.round(subtotal * (svcPct / 100)) : 0;
+  const discountAmt =
+    mode !== 'full' ? 0 : oDisc > 0 ? oDisc : discPct > 0 ? Math.round(subtotal * (discPct / 100)) : 0;
   const grandTotal = subtotal + hourly + serviceFee - discountAmt;
   const paidTotal = paidItems.reduce((s, i) => s + itemLineTotal(i), 0);
 
