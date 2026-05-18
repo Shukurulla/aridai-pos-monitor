@@ -477,11 +477,15 @@ class ApiService {
       // Soatlik item'lar DAQIQALI hisoblanadi (jonli) — itemLineTotal.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const subtotal = activeItems.reduce((sum: number, item: any) => sum + itemLineTotal(item), 0);
-      // Для сабой сервисного сбора нет
-      // Сервисный сбор отключен по всей системе
-      const serviceChargePercent = 0;
-      const serviceCharge = 0;
-      const grandTotal = subtotal + serviceCharge;
+      // #1/#2: услуга% / chegирма% — backenddan (Order.recalculateTotals
+      // bilan AYNAN bir xil). Default 0 → avvalgi xulq saqlanadi.
+      const serviceChargePercent = Number(order.serviceChargePercent || 0);
+      const discountPercent = Number(order.discountPercent || 0);
+      const serviceCharge =
+        serviceChargePercent > 0 ? Math.round(subtotal * (serviceChargePercent / 100)) : 0;
+      const discount =
+        discountPercent > 0 ? Math.round(subtotal * (discountPercent / 100)) : 0;
+      const grandTotal = subtotal + serviceCharge - discount;
 
       // Статус оплаты: isPaid или status === 'paid'
       const isPaid = order.isPaid === true || order.status === 'paid';
@@ -517,6 +521,9 @@ class ApiService {
         paymentType: order.paymentType,
         total: subtotal,
         serviceFee: serviceCharge,
+        discount,
+        serviceChargePercent,
+        discountPercent,
         grandTotal: finalGrandTotal,
         waiter: {
           _id: order.waiterId?._id || order.waiterId || '',
@@ -694,10 +701,16 @@ class ApiService {
     // Не учитываем отменённые элементы
     const activeItems = items.filter((item: { status: string }) => item.status !== 'cancelled');
     const subtotal = activeItems.reduce((sum: number, item: { price: number; quantity: number }) => sum + item.price * item.quantity, 0);
-    // Сервисный сбор отключен
-    const serviceChargePercent = 0;
-    const serviceCharge = 0;
-    const grandTotal = subtotal + serviceCharge;
+    // #1/#2: услуга% / chegирма% — backenddan (Order.recalculateTotals AYNAN
+    // shu formula). Default 0 → serviceCharge=0, discount=0,
+    // grandTotal=subtotal (avvalgi xulq AYNAN saqlanadi).
+    const serviceChargePercent = Number(order.serviceChargePercent || 0);
+    const discountPercent = Number(order.discountPercent || 0);
+    const serviceCharge =
+      serviceChargePercent > 0 ? Math.round(subtotal * (serviceChargePercent / 100)) : 0;
+    const discount =
+      discountPercent > 0 ? Math.round(subtotal * (discountPercent / 100)) : 0;
+    const grandTotal = subtotal + serviceCharge - discount;
 
     const tableNumber = order.tableId?.number || 0;
     const tableName = isSaboy ? 'Сабой' : `Стол ${tableNumber}`;
@@ -715,6 +728,9 @@ class ApiService {
       paymentType: order.paymentType,
       total: subtotal,
       serviceFee: serviceCharge,
+      discount,
+      serviceChargePercent,
+      discountPercent,
       grandTotal: grandTotal,
       waiter: {
         _id: order.waiterId?._id || '',
@@ -778,10 +794,16 @@ class ApiService {
     // Не учитываем отменённые элементы
     const activeItemsForCalc = items.filter(item => item.status !== 'cancelled');
     const subtotal = activeItemsForCalc.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    // Сервисный сбор отключен
-    const serviceChargePercent = 0;
-    const serviceCharge = 0;
-    const grandTotal = subtotal + serviceCharge;
+    // #1/#2: услуга% / chegирма% — backenddan (Order.recalculateTotals AYNAN
+    // shu formula). Default 0 → serviceCharge=0, discount=0,
+    // grandTotal=subtotal (avvalgi xulq AYNAN saqlanadi).
+    const serviceChargePercent = Number(order.serviceChargePercent || 0);
+    const discountPercent = Number(order.discountPercent || 0);
+    const serviceCharge =
+      serviceChargePercent > 0 ? Math.round(subtotal * (serviceChargePercent / 100)) : 0;
+    const discount =
+      discountPercent > 0 ? Math.round(subtotal * (discountPercent / 100)) : 0;
+    const grandTotal = subtotal + serviceCharge - discount;
     const tableNumber = order.tableId?.number || 0;
 
     const transformedOrder: Order = {
@@ -797,6 +819,9 @@ class ApiService {
       paymentType: order.paymentType,
       total: subtotal,
       serviceFee: serviceCharge,
+      discount,
+      serviceChargePercent,
+      discountPercent,
       grandTotal: grandTotal,
       waiter: {
         _id: order.waiterId?._id || '',
@@ -1057,10 +1082,16 @@ class ApiService {
     const isSaboy = orderType === 'saboy';
     const activeOrderItems = orderItems.filter((item: { status: string }) => item.status !== 'cancelled');
     const subtotal = activeOrderItems.reduce((sum: number, item: { price: number; quantity: number }) => sum + item.price * item.quantity, 0);
-    // Сервисный сбор отключен
-    const serviceChargePercent = 0;
-    const serviceCharge = 0;
-    const grandTotal = subtotal + serviceCharge;
+    // #1/#2: услуга% / chegирма% — backenddan (Order.recalculateTotals AYNAN
+    // shu formula). Default 0 → serviceCharge=0, discount=0,
+    // grandTotal=subtotal (avvalgi xulq AYNAN saqlanadi).
+    const serviceChargePercent = Number(order.serviceChargePercent || 0);
+    const discountPercent = Number(order.discountPercent || 0);
+    const serviceCharge =
+      serviceChargePercent > 0 ? Math.round(subtotal * (serviceChargePercent / 100)) : 0;
+    const discount =
+      discountPercent > 0 ? Math.round(subtotal * (discountPercent / 100)) : 0;
+    const grandTotal = subtotal + serviceCharge - discount;
     const tableNumber = order.tableId?.number || 0;
 
     return {
@@ -1076,6 +1107,9 @@ class ApiService {
       paymentType: order.paymentType,
       total: subtotal,
       serviceFee: serviceCharge,
+      discount,
+      serviceChargePercent,
+      discountPercent,
       grandTotal: grandTotal,
       waiter: {
         _id: order.waiterId?._id || '',
@@ -1118,6 +1152,16 @@ class ApiService {
     await this.request(`/api/orders/${orderId}/items/${itemId}/quantity`, {
       method: 'PATCH',
       body: JSON.stringify({ quantity }),
+    });
+  }
+
+  // #2: shu order uchun chegирма % (backend updateOrder → recalculateTotals).
+  // FAQAT shu zakazga ta'sir qiladi; chekda ko'rsatiladi.
+  async setOrderDiscount(orderId: string, discountPercent: number): Promise<void> {
+    const p = Math.max(0, Math.min(100, Number(discountPercent) || 0));
+    await this.request(`/api/orders/${orderId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ discountPercent: p }),
     });
   }
 

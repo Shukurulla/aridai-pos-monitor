@@ -102,6 +102,9 @@ export interface Order {
   comment?: string;
   total: number;
   serviceFee: number;
+  discount?: number;
+  serviceChargePercent?: number;
+  discountPercent?: number;
   grandTotal: number;
   waiter: {
     _id: string;
@@ -159,6 +162,9 @@ export interface PaymentData {
   }[];
   subtotal: number;
   serviceFee: number;
+  serviceFeePercent?: number;
+  discount?: number;
+  discountPercent?: number;
   // Почасовая оплата (hourly charge)
   hourlyCharge?: number;
   hourlyHours?: number;

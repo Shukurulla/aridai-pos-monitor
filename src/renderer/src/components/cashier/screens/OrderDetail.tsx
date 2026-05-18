@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { OrderItem } from '@/types';
+import { api } from '@/services/api';
 import { T, NavIcon, fmt, payLabel, StatusKey } from '@/lib/theme';
 import { StatusPill, Pager, CTA, Btn, Row } from '../shell';
 import { ScreenCtx } from './types';
@@ -13,6 +14,9 @@ export function OrderDetailScreen({ ctx }: { ctx: ScreenCtx }) {
   const order = ctx.currentOrder;
   const [page, setPage] = useState(1);
   const [modal, setModal] = useState<ModalState>(null);
+  // #2: shu order uchun chegирма
+  const [discOpen, setDiscOpen] = useState(false);
+  const [discBusy, setDiscBusy] = useState(false);
 
   useEffect(() => {
     if (!order) ctx.go('orders');
@@ -143,12 +147,115 @@ export function OrderDetailScreen({ ctx }: { ctx: ScreenCtx }) {
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {!isPaid && order.orderType !== 'saboy' && (
+            <button
+              onClick={() => setDiscOpen(true)}
+              style={{
+                height: 52,
+                padding: '0 18px',
+                background: (order.discountPercent || 0) > 0 ? T.served : T.surface,
+                color: (order.discountPercent || 0) > 0 ? '#fff' : T.text,
+                border: `2px solid ${(order.discountPercent || 0) > 0 ? T.served : T.borderStrong}`,
+                fontFamily: T.font,
+                fontSize: 16,
+                fontWeight: 800,
+                cursor: 'pointer',
+              }}
+            >
+              Скидка{(order.discountPercent || 0) > 0 ? ` ${order.discountPercent}%` : ''}
+            </button>
+          )}
           <StatusPill status={sk} size="lg" />
           <Btn onClick={() => ctx.go('orders')} height={52}>
             <NavIcon kind="chevronLeft" /> К заказам
           </Btn>
         </div>
       </div>
+
+      {discOpen && (
+        <div
+          onClick={() => !discBusy && setDiscOpen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 50,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: T.surface,
+              border: `1px solid ${T.border}`,
+              padding: 24,
+              width: 460,
+              maxWidth: '90%',
+            }}
+          >
+            <div style={{ fontSize: 20, fontWeight: 900, color: T.text, marginBottom: 4 }}>
+              Скидка на заказ
+            </div>
+            <div style={{ fontSize: 14, color: T.textMuted, marginBottom: 18 }}>
+              {order.tableName} · применяется только к этому заказу
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+              {[0, 5, 10, 15, 20, 25, 30, 50].map((p) => {
+                const active = (order.discountPercent || 0) === p;
+                return (
+                  <button
+                    key={p}
+                    disabled={discBusy}
+                    onClick={async () => {
+                      setDiscBusy(true);
+                      try {
+                        await api.setOrderDiscount(order._id, p);
+                        await ctx.reload();
+                        setDiscOpen(false);
+                      } catch {
+                        alert('Не удалось применить скидку');
+                      } finally {
+                        setDiscBusy(false);
+                      }
+                    }}
+                    style={{
+                      height: 64,
+                      background: active ? T.served : T.panel,
+                      color: active ? '#fff' : T.text,
+                      border: `2px solid ${active ? T.served : T.border}`,
+                      fontFamily: T.font,
+                      fontSize: 20,
+                      fontWeight: 900,
+                      cursor: discBusy ? 'wait' : 'pointer',
+                    }}
+                  >
+                    {p === 0 ? 'Нет' : `${p}%`}
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              onClick={() => !discBusy && setDiscOpen(false)}
+              style={{
+                marginTop: 18,
+                width: '100%',
+                height: 52,
+                background: T.panel,
+                color: T.text,
+                border: `1px solid ${T.border}`,
+                fontFamily: T.font,
+                fontSize: 16,
+                fontWeight: 800,
+                cursor: 'pointer',
+              }}
+            >
+              Закрыть
+            </button>
+          </div>
+        </div>
+      )}
 
       <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 360px', overflow: 'hidden' }}>
         {/* LEFT — items */}

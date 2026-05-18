@@ -92,11 +92,14 @@ export const PrinterAPI = {
           price: item.price,
         })),
         itemsTotal: paymentData.subtotal,
-        serviceFee: 0,
+        // #1/#2: услуга / chegирма chekda ko'rsatilsin (avval 0 edi).
+        serviceFee: paymentData.serviceFee || 0,
+        serviceFeePercent: paymentData.serviceFeePercent || 0,
         hourlyCharge: paymentData.hourlyCharge,
         hourlyHours: paymentData.hourlyHours,
         totalPrice: paymentData.total,
-        discount: 0,
+        discount: paymentData.discount || 0,
+        discountPercent: paymentData.discountPercent || 0,
       });
     } catch (error) {
       console.error('Failed to print payment:', error);

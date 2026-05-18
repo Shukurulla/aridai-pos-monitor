@@ -71,7 +71,13 @@ export function PaymentScreen({ ctx }: { ctx: ScreenCtx }) {
   const subtotal = itemsToPay.reduce((s, i) => s + itemLineTotal(i), 0);
   const { hours, charge } = calcHourly(order);
   const hourly = mode === 'full' ? charge : 0;
-  const grandTotal = subtotal + hourly;
+  // #1/#2: услуга% / chegирма% — order'dan (backend bilan AYNAN bir xil
+  // formula). Faqat to'liq to'lovda; default 0 → grandTotal=subtotal+hourly.
+  const _svcPct = Number((order as { serviceChargePercent?: number }).serviceChargePercent || 0);
+  const _discPct = Number((order as { discountPercent?: number }).discountPercent || 0);
+  const serviceFee = mode === 'full' && _svcPct > 0 ? Math.round(subtotal * (_svcPct / 100)) : 0;
+  const discountAmt = mode === 'full' && _discPct > 0 ? Math.round(subtotal * (_discPct / 100)) : 0;
+  const grandTotal = subtotal + hourly + serviceFee - discountAmt;
   const paidTotal = paidItems.reduce((s, i) => s + itemLineTotal(i), 0);
 
   const splitSum = split.cash + split.card + split.click;

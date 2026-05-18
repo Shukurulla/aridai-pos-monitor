@@ -69,6 +69,12 @@ async function printOrderReceipt(order: Order, restaurantName: string, silent: b
     hourlyCharge = order.hourlyCharge || 0;
     hourlyHours = order.hourlyChargeHours || 0;
   }
+  // #1/#2: услуга% / chegирма% — order'dan (backend bilan AYNAN bir xil).
+  // Default 0 → chekda chiqmaydi, ИТОГО avvalgidek.
+  const _svcP = Number((order as { serviceChargePercent?: number }).serviceChargePercent || 0);
+  const _discP = Number((order as { discountPercent?: number }).discountPercent || 0);
+  const _svcFee = _svcP > 0 ? Math.round(printSubtotal * (_svcP / 100)) : 0;
+  const _discAmt = _discP > 0 ? Math.round(printSubtotal * (_discP / 100)) : 0;
   try {
     const result = await PrinterAPI.printPayment({
       orderId: order._id,
@@ -81,10 +87,13 @@ async function printOrderReceipt(order: Order, restaurantName: string, silent: b
           : { name: i.name, quantity: i.quantity, price: i.price },
       ),
       subtotal: printSubtotal,
-      serviceFee: 0,
+      serviceFee: _svcFee,
+      serviceFeePercent: _svcP,
+      discount: _discAmt,
+      discountPercent: _discP,
       hourlyCharge: hourlyCharge > 0 ? hourlyCharge : undefined,
       hourlyHours: hourlyHours > 0 ? hourlyHours : undefined,
-      total: printSubtotal + hourlyCharge,
+      total: printSubtotal + hourlyCharge + _svcFee - _discAmt,
       paymentType: order.paymentType || 'cash',
       restaurantName: restaurantName || 'Ресторан',
       date: new Date().toLocaleString('ru-RU'),

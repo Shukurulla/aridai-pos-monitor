@@ -32,6 +32,7 @@ export function SettingsScreen({ ctx }: { ctx: ScreenCtx }) {
 
   // ─── Услуга% / Скидка% (restoran sozlamasi, backendda saqlanadi) ───
   const [svcPct, setSvcPct] = useState('0');
+  const [svcEnabled, setSvcEnabled] = useState(false); // #1: услуга on/off
   const [discPct, setDiscPct] = useState('0');
   const [chgLoaded, setChgLoaded] = useState(false);
   const [chgSaving, setChgSaving] = useState(false);
@@ -44,6 +45,7 @@ export function SettingsScreen({ ctx }: { ctx: ScreenCtx }) {
       .then((s) => {
         if (!alive) return;
         setSvcPct(String(s.serviceChargePercent ?? 0));
+        setSvcEnabled(Number(s.serviceChargePercent ?? 0) > 0);
         setDiscPct(String(s.discountPercent ?? 0));
         setChgLoaded(true);
       })
@@ -59,11 +61,14 @@ export function SettingsScreen({ ctx }: { ctx: ScreenCtx }) {
     try {
       const sv = Math.max(0, Math.min(100, Number(svcPct) || 0));
       const di = Math.max(0, Math.min(100, Number(discPct) || 0));
+      // #1: toggle o'chiq bo'lsa — backendga 0 yuboriladi (chek/hisobotda
+      // qo'shilmaydi). % qiymati inputda saqlanadi (qayta yoqilsa tiklanadi).
       const r = await api.updateRestaurantSettings({
-        serviceChargePercent: sv,
+        serviceChargePercent: svcEnabled ? sv : 0,
         discountPercent: di,
       });
-      setSvcPct(String(r.serviceChargePercent));
+      setSvcEnabled(Number(r.serviceChargePercent) > 0);
+      if (Number(r.serviceChargePercent) > 0) setSvcPct(String(r.serviceChargePercent));
       setDiscPct(String(r.discountPercent));
       setChgMsg('Сохранено ✓');
     } catch (e) {
@@ -295,8 +300,41 @@ export function SettingsScreen({ ctx }: { ctx: ScreenCtx }) {
             <b> 0</b> — выключено (работает без услуги/скидки). Скидку можно
             изменить в самом заказе.
           </div>
+          <button
+            onClick={() => setSvcEnabled((v) => !v)}
+            disabled={!chgLoaded}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              width: '100%',
+              height: 48,
+              padding: '0 14px',
+              margin: '4px 0',
+              background: T.panel,
+              border: `1px solid ${svcEnabled ? T.served : T.border}`,
+              color: T.text,
+              fontFamily: T.font,
+              fontSize: 15,
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            <span>Услуга {svcEnabled ? 'ВКЛЮЧЕНА' : 'ВЫКЛЮЧЕНА'}</span>
+            <span
+              style={{
+                padding: '4px 12px',
+                background: svcEnabled ? T.served : T.cancelled,
+                color: '#fff',
+                fontSize: 13,
+                fontWeight: 800,
+              }}
+            >
+              {svcEnabled ? 'ВКЛ' : 'ВЫКЛ'}
+            </span>
+          </button>
           <div style={{ display: 'flex', gap: 12 }}>
-            <div style={{ flex: 1 }}>
+            <div style={{ flex: 1, opacity: svcEnabled ? 1 : 0.45 }}>
               <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.6 }}>
                 Услуга %
               </div>
