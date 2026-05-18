@@ -31,6 +31,26 @@ export function ReportsScreen({ ctx }: { ctx: ScreenCtx }) {
   const [cancelledLoading, setCancelledLoading] = useState(false);
   const [printing, setPrinting] = useState<string | null>(null);
 
+  // Способы оплаты — ТОТ ЖЕ источник, что и шапка (ctx.summary), чтобы
+  // Наличные+Карта+Перевод всегда сходились с «Итого выручка».
+  // /api/hisobot (report) и /api/reports (шапка) считают наличные по-разному
+  // (одно за вычетом расходов) → раньше суммы не совпадали. Берём summary;
+  // если он пуст (0) — откатываемся к report.
+  const _s = ctx.summary;
+  const _useSummary = (_s?.totalRevenue || 0) > 0;
+  const payCash = _useSummary
+    ? _s.cashRevenue || 0
+    : report?.paymentMethods.cash.total || 0;
+  const payCard = _useSummary
+    ? _s.cardRevenue || 0
+    : report?.paymentMethods.card.total || 0;
+  const payClick = _useSummary
+    ? _s.clickRevenue || 0
+    : report?.paymentMethods.click.total || 0;
+  const payTotal = _useSummary
+    ? _s.totalRevenue || 0
+    : report?.sales.totalRevenue || 0;
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -128,17 +148,17 @@ export function ReportsScreen({ ctx }: { ctx: ScreenCtx }) {
             rows: [
               {
                 label: "Наличные",
-                amount: report?.paymentMethods.cash.total || 0,
+                amount: payCash,
                 count: report?.paymentMethods.cash.count || 0,
               },
               {
                 label: "Карта",
-                amount: report?.paymentMethods.card.total || 0,
+                amount: payCard,
                 count: report?.paymentMethods.card.count || 0,
               },
               {
                 label: "Перевод",
-                amount: report?.paymentMethods.click.total || 0,
+                amount: payClick,
                 count: report?.paymentMethods.click.count || 0,
               },
             ],
@@ -163,7 +183,7 @@ export function ReportsScreen({ ctx }: { ctx: ScreenCtx }) {
             ],
           },
         ],
-        grandTotal: report?.sales.totalRevenue || 0,
+        grandTotal: payTotal,
       }),
     );
 
@@ -298,13 +318,19 @@ export function ReportsScreen({ ctx }: { ctx: ScreenCtx }) {
       const refusalPositions = (can?.items || []).reduce((s, c) => s - c.quantity, 0);
 
       const pm = rep?.paymentMethods;
+      const grand = rep?.sales.totalRevenue || 0;
       const payments: { name: string; sum: number }[] = [];
       if (pm) {
-        if (pm.card.total) payments.push({ name: "Картой", sum: pm.card.total });
-        if (pm.cash.total) payments.push({ name: "Наличными", sum: pm.cash.total });
-        if (pm.click.total) payments.push({ name: "Click/Перевод", sum: pm.click.total });
+        const cardV = pm.card.total || 0;
+        const clickV = pm.click.total || 0;
+        // Наличные = всего − карта − перевод, чтобы способы оплаты ВСЕГДА
+        // сходились с «ИТОГО» (как в шапке). /api/hisobot отдаёт наличные
+        // за вычетом расходов → раньше акт не сходился.
+        const cashV = Math.max(0, grand - cardV - clickV);
+        if (cardV) payments.push({ name: "Картой", sum: cardV });
+        if (cashV) payments.push({ name: "Наличными", sum: cashV });
+        if (clickV) payments.push({ name: "Click/Перевод", sum: clickV });
       }
-      const grand = rep?.sales.totalRevenue || 0;
       const staff = (rep?.staff.waiters || []).map((w) => ({
         name: w.name,
         count: w.totalOrders,
@@ -401,12 +427,12 @@ export function ReportsScreen({ ctx }: { ctx: ScreenCtx }) {
     if (tab === "general" && report) {
       bodyHtml =
         `<table><thead>${th(["Показатель", "Сумма"])}</thead><tbody>` +
-        tr(["Наличные", fmt(report.paymentMethods.cash.total || 0)]) +
-        tr(["Карта", fmt(report.paymentMethods.card.total || 0)]) +
-        tr(["Перевод", fmt(report.paymentMethods.click.total || 0)]) +
+        tr(["Наличные", fmt(payCash)]) +
+        tr(["Карта", fmt(payCard)]) +
+        tr(["Перевод", fmt(payClick)]) +
         tr([
           "<b>ИТОГО выручка</b>",
-          `<b>${fmt(report.sales.totalRevenue || 0)}</b>`,
+          `<b>${fmt(payTotal)}</b>`,
         ]) +
         tr(["Кол-во чеков", String(report.sales.totalChecks || 0)]) +
         tr(["Средний чек", fmt(report.sales.averageCheck || 0)]) +
@@ -654,19 +680,19 @@ ${bodyHtml || "<p>Нет данных</p>"}
               >
                 <MiniStat
                   label="Наличные"
-                  value={fmt(report?.paymentMethods.cash.total || 0)}
+                  value={fmt(payCash)}
                   color={T.ready}
                   large
                 />
                 <MiniStat
                   label="Карта"
-                  value={fmt(report?.paymentMethods.card.total || 0)}
+                  value={fmt(payCard)}
                   color={T.served}
                   large
                 />
                 <MiniStat
                   label="Перевод"
-                  value={fmt(report?.paymentMethods.click.total || 0)}
+                  value={fmt(payClick)}
                   color={T.cta}
                   large
                 />
@@ -698,7 +724,7 @@ ${bodyHtml || "<p>Нет данных</p>"}
                     color: T.cta,
                   }}
                 >
-                  {fmt(report?.sales.totalRevenue || 0)}
+                  {fmt(payTotal)}
                 </span>
               </div>
               <div
