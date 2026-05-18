@@ -12,7 +12,8 @@ export function ShiftOpenScreen({ ctx }: { ctx: ScreenCtx }) {
   const [amount, setAmount] = useState(0);
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
-  const denominations = [10000, 50000, 100000, 200000, 500000, 1000000];
+  // Qozog'iston tenge real kupyuralari (fantastik summa emas)
+  const denominations = [500, 1000, 2000, 5000, 10000, 20000];
 
   const today = new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
 

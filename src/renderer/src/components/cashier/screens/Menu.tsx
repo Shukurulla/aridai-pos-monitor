@@ -590,6 +590,15 @@ export function SaboyScreen({ ctx }: { ctx: ScreenCtx }) {
 // #3b/#5: cashier ONLINE «+ Новый заказ» (dine-in): стол → официант → меню.
 type NOTable = { _id: string; title: string; number: number; occupied: boolean; categoryTitle: string };
 
+// Stol raqamini nomdan ajratish (backend'da alohida number YO'Q — hammasi 0).
+// "Стол 10" → 10. Shu bilan 1,2,3…10,11,12 to'g'ri tartiblanadi
+// (avval matn bo'yicha 1,11,12 bo'lib ketardi).
+function noTableNum(t: NOTable): number {
+  if (t.number && t.number > 0) return t.number;
+  const m = String(t.title || '').match(/\d+/);
+  return m ? parseInt(m[0], 10) : 1e9;
+}
+
 export function NewOrderScreen({ ctx }: { ctx: ScreenCtx }) {
   const [step, setStep] = useState<'table' | 'waiter' | 'menu'>('table');
   const [tables, setTables] = useState<NOTable[]>([]);
@@ -721,7 +730,7 @@ export function NewOrderScreen({ ctx }: { ctx: ScreenCtx }) {
                     {cat}
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12 }}>
-                    {list.map((t) => {
+                    {[...list].sort((a, b) => noTableNum(a) - noTableNum(b)).map((t) => {
                       const busy =
                         t.occupied ||
                         occ.ids.has(String(t._id)) ||

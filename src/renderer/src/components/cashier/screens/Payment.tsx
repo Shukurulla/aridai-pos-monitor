@@ -541,7 +541,7 @@ export function PaymentScreen({ ctx }: { ctx: ScreenCtx }) {
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
-                {[1000, 5000, 10000, 50000, 100000, 200000, 500000, 1000000].map((d) => (
+                {[200, 500, 1000, 2000, 5000, 10000, 20000].map((d) => (
                   <button
                     key={d}
                     onClick={() => setReceived((r) => (r ?? 0) + d)}

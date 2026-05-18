@@ -167,7 +167,7 @@ export function ShiftCloseScreen({ ctx }: { ctx: ScreenCtx }) {
             {fmt(counted)}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
-            {[10000, 50000, 100000, 200000, 500000, 1000000, -10000, -100000].map((d) => (
+            {[500, 1000, 2000, 5000, 10000, 20000, -1000, -10000].map((d) => (
               <button
                 key={d}
                 onClick={() => setCounted((c) => Math.max(0, c + d))}
