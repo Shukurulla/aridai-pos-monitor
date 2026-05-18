@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { PrinterAPI } from '@/services/printer';
+import { api } from '@/services/api';
 import { T, NavIcon } from '@/lib/theme';
 import { SubHeader, SectionTitle, Btn, ToggleRow, Row } from '../shell';
 import { ScreenCtx } from './types';
@@ -28,6 +29,49 @@ export function SettingsScreen({ ctx }: { ctx: ScreenCtx }) {
       /* ignore */
     }
   }, []);
+
+  // ─── Услуга% / Скидка% (restoran sozlamasi, backendda saqlanadi) ───
+  const [svcPct, setSvcPct] = useState('0');
+  const [discPct, setDiscPct] = useState('0');
+  const [chgLoaded, setChgLoaded] = useState(false);
+  const [chgSaving, setChgSaving] = useState(false);
+  const [chgMsg, setChgMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    api
+      .getRestaurantSettings()
+      .then((s) => {
+        if (!alive) return;
+        setSvcPct(String(s.serviceChargePercent ?? 0));
+        setDiscPct(String(s.discountPercent ?? 0));
+        setChgLoaded(true);
+      })
+      .catch(() => alive && setChgLoaded(true));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const saveCharges = async () => {
+    setChgSaving(true);
+    setChgMsg(null);
+    try {
+      const sv = Math.max(0, Math.min(100, Number(svcPct) || 0));
+      const di = Math.max(0, Math.min(100, Number(discPct) || 0));
+      const r = await api.updateRestaurantSettings({
+        serviceChargePercent: sv,
+        discountPercent: di,
+      });
+      setSvcPct(String(r.serviceChargePercent));
+      setDiscPct(String(r.discountPercent));
+      setChgMsg('Сохранено ✓');
+    } catch (e) {
+      setChgMsg(e instanceof Error ? e.message : 'Ошибка сохранения');
+    } finally {
+      setChgSaving(false);
+    }
+  };
 
   const normalizedHub = (value: string) => value.trim().replace(/\/+$/, '');
 
@@ -244,6 +288,79 @@ export function SettingsScreen({ ctx }: { ctx: ScreenCtx }) {
               По умолчанию (localhost)
             </Btn>
           </div>
+
+          <SectionTitle style={{ marginTop: 12 }}>Услуга и скидка</SectionTitle>
+          <div style={{ fontSize: 13, color: T.textMuted, lineHeight: 1.5 }}>
+            Услуга (%) и скидка (%) — применяются ко всем новым заказам.
+            <b> 0</b> — выключено (работает без услуги/скидки). Скидку можно
+            изменить в самом заказе.
+          </div>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.6 }}>
+                Услуга %
+              </div>
+              <input
+                type="number"
+                inputMode="decimal"
+                min={0}
+                max={100}
+                value={svcPct}
+                onChange={(e) => setSvcPct(e.target.value)}
+                disabled={!chgLoaded}
+                style={{
+                  width: '100%',
+                  height: 48,
+                  padding: '0 14px',
+                  fontSize: 16,
+                  fontFamily: T.font,
+                  background: T.panel,
+                  border: `1px solid ${T.border}`,
+                  color: T.text,
+                  outline: 'none',
+                }}
+              />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.6 }}>
+                Скидка %
+              </div>
+              <input
+                type="number"
+                inputMode="decimal"
+                min={0}
+                max={100}
+                value={discPct}
+                onChange={(e) => setDiscPct(e.target.value)}
+                disabled={!chgLoaded}
+                style={{
+                  width: '100%',
+                  height: 48,
+                  padding: '0 14px',
+                  fontSize: 16,
+                  fontFamily: T.font,
+                  background: T.panel,
+                  border: `1px solid ${T.border}`,
+                  color: T.text,
+                  outline: 'none',
+                }}
+              />
+            </div>
+          </div>
+          {chgMsg && (
+            <div
+              style={{
+                fontSize: 13,
+                fontWeight: 800,
+                color: chgMsg.includes('✓') ? T.served : T.cancelled,
+              }}
+            >
+              {chgMsg}
+            </div>
+          )}
+          <Btn onClick={saveCharges} fullWidth height={48} disabled={chgSaving || !chgLoaded}>
+            {chgSaving ? 'Сохранение…' : 'Сохранить услугу и скидку'}
+          </Btn>
 
           <SectionTitle style={{ marginTop: 12 }}>Принтер для чеков</SectionTitle>
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 14 }}>

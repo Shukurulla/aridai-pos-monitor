@@ -1414,6 +1414,40 @@ class ApiService {
     const data = await this.request<any>(`/api/reports/cashiers?${params.toString()}`);
     return data.data?.cashiers || [];
   }
+
+  // ── Restoran sozlamalari: услуга% / chegирма% ──────────────────────
+  async getRestaurantSettings(): Promise<{
+    name: string;
+    serviceChargePercent: number;
+    discountPercent: number;
+    currency: string;
+  }> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data = await this.request<any>('/api/restaurant/settings');
+    const d = data.data || {};
+    return {
+      name: d.name || '',
+      serviceChargePercent: Number(d.serviceChargePercent || 0),
+      discountPercent: Number(d.discountPercent || 0),
+      currency: d.currency || 'KZT',
+    };
+  }
+
+  async updateRestaurantSettings(body: {
+    serviceChargePercent?: number;
+    discountPercent?: number;
+  }): Promise<{ serviceChargePercent: number; discountPercent: number }> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data = await this.request<any>('/api/restaurant/settings', {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
+    const d = data.data || {};
+    return {
+      serviceChargePercent: Number(d.serviceChargePercent || 0),
+      discountPercent: Number(d.discountPercent || 0),
+    };
+  }
 }
 
 // Report Types
