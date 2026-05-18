@@ -477,14 +477,12 @@ class ApiService {
       // Soatlik item'lar DAQIQALI hisoblanadi (jonli) — itemLineTotal.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const subtotal = activeItems.reduce((sum: number, item: any) => sum + itemLineTotal(item), 0);
-      // #1/#2: услуга% / chegирма% — backenddan (Order.recalculateTotals
-      // bilan AYNAN bir xil). Default 0 → avvalgi xulq saqlanadi.
+      // #1/#2: услуга/chegирма — GLOBAL backend hisoblaydi, POS faqat
+      // backend summasini ko'rsatadi (admin panel bilan AYNAN bir xil).
       const serviceChargePercent = Number(order.serviceChargePercent || 0);
       const discountPercent = Number(order.discountPercent || 0);
-      const serviceCharge =
-        serviceChargePercent > 0 ? Math.round(subtotal * (serviceChargePercent / 100)) : 0;
-      const discount =
-        discountPercent > 0 ? Math.round(subtotal * (discountPercent / 100)) : 0;
+      const serviceCharge = Number(order.serviceCharge || 0);
+      const discount = Number(order.discount || 0);
       const grandTotal = subtotal + serviceCharge - discount;
 
       // Статус оплаты: isPaid или status === 'paid'
@@ -701,15 +699,14 @@ class ApiService {
     // Не учитываем отменённые элементы
     const activeItems = items.filter((item: { status: string }) => item.status !== 'cancelled');
     const subtotal = activeItems.reduce((sum: number, item: { price: number; quantity: number }) => sum + item.price * item.quantity, 0);
-    // #1/#2: услуга% / chegирма% — backenddan (Order.recalculateTotals AYNAN
-    // shu formula). Default 0 → serviceCharge=0, discount=0,
-    // grandTotal=subtotal (avvalgi xulq AYNAN saqlanadi).
+    // #1/#2: услуга/chegирма — GLOBAL VPS backend hisoblaydi va bazaga
+    // yozadi. POS mijoz tomonda FOIZ HISOBLAMAYDI — backend bergan
+    // serviceCharge/discount summasini KO'RSATADI (admin panel bilan
+    // AYNAN bir xil). subtotal jonli (soatlik o'sib turadi) qoladi.
     const serviceChargePercent = Number(order.serviceChargePercent || 0);
     const discountPercent = Number(order.discountPercent || 0);
-    const serviceCharge =
-      serviceChargePercent > 0 ? Math.round(subtotal * (serviceChargePercent / 100)) : 0;
-    const discount =
-      discountPercent > 0 ? Math.round(subtotal * (discountPercent / 100)) : 0;
+    const serviceCharge = Number(order.serviceCharge || 0);
+    const discount = Number(order.discount || 0);
     const grandTotal = subtotal + serviceCharge - discount;
 
     const tableNumber = order.tableId?.number || 0;
@@ -794,15 +791,14 @@ class ApiService {
     // Не учитываем отменённые элементы
     const activeItemsForCalc = items.filter(item => item.status !== 'cancelled');
     const subtotal = activeItemsForCalc.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    // #1/#2: услуга% / chegирма% — backenddan (Order.recalculateTotals AYNAN
-    // shu formula). Default 0 → serviceCharge=0, discount=0,
-    // grandTotal=subtotal (avvalgi xulq AYNAN saqlanadi).
+    // #1/#2: услуга/chegирма — GLOBAL VPS backend hisoblaydi va bazaga
+    // yozadi. POS mijoz tomonda FOIZ HISOBLAMAYDI — backend bergan
+    // serviceCharge/discount summasini KO'RSATADI (admin panel bilan
+    // AYNAN bir xil). subtotal jonli (soatlik o'sib turadi) qoladi.
     const serviceChargePercent = Number(order.serviceChargePercent || 0);
     const discountPercent = Number(order.discountPercent || 0);
-    const serviceCharge =
-      serviceChargePercent > 0 ? Math.round(subtotal * (serviceChargePercent / 100)) : 0;
-    const discount =
-      discountPercent > 0 ? Math.round(subtotal * (discountPercent / 100)) : 0;
+    const serviceCharge = Number(order.serviceCharge || 0);
+    const discount = Number(order.discount || 0);
     const grandTotal = subtotal + serviceCharge - discount;
     const tableNumber = order.tableId?.number || 0;
 
@@ -1082,15 +1078,14 @@ class ApiService {
     const isSaboy = orderType === 'saboy';
     const activeOrderItems = orderItems.filter((item: { status: string }) => item.status !== 'cancelled');
     const subtotal = activeOrderItems.reduce((sum: number, item: { price: number; quantity: number }) => sum + item.price * item.quantity, 0);
-    // #1/#2: услуга% / chegирма% — backenddan (Order.recalculateTotals AYNAN
-    // shu formula). Default 0 → serviceCharge=0, discount=0,
-    // grandTotal=subtotal (avvalgi xulq AYNAN saqlanadi).
+    // #1/#2: услуга/chegирма — GLOBAL VPS backend hisoblaydi va bazaga
+    // yozadi. POS mijoz tomonda FOIZ HISOBLAMAYDI — backend bergan
+    // serviceCharge/discount summasini KO'RSATADI (admin panel bilan
+    // AYNAN bir xil). subtotal jonli (soatlik o'sib turadi) qoladi.
     const serviceChargePercent = Number(order.serviceChargePercent || 0);
     const discountPercent = Number(order.discountPercent || 0);
-    const serviceCharge =
-      serviceChargePercent > 0 ? Math.round(subtotal * (serviceChargePercent / 100)) : 0;
-    const discount =
-      discountPercent > 0 ? Math.round(subtotal * (discountPercent / 100)) : 0;
+    const serviceCharge = Number(order.serviceCharge || 0);
+    const discount = Number(order.discount || 0);
     const grandTotal = subtotal + serviceCharge - discount;
     const tableNumber = order.tableId?.number || 0;
 
@@ -1162,6 +1157,24 @@ class ApiService {
     await this.request(`/api/orders/${orderId}`, {
       method: 'PATCH',
       body: JSON.stringify({ discountPercent: p }),
+    });
+  }
+
+  // #1/#2: order'ning услуга% va/yoki chegирма%ini backendga yozadi
+  // (updateOrder → recalculateTotals → grandTotal). Backend = yagona
+  // haqiqat manbai → ekran, chek, hisobot bir xil bo'ladi.
+  async setOrderCharges(
+    orderId: string,
+    body: { serviceChargePercent?: number; discountPercent?: number },
+  ): Promise<void> {
+    const patch: { serviceChargePercent?: number; discountPercent?: number } = {};
+    if (body.serviceChargePercent !== undefined)
+      patch.serviceChargePercent = Math.max(0, Math.min(100, Number(body.serviceChargePercent) || 0));
+    if (body.discountPercent !== undefined)
+      patch.discountPercent = Math.max(0, Math.min(100, Number(body.discountPercent) || 0));
+    await this.request(`/api/orders/${orderId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
     });
   }
 
@@ -1462,6 +1475,7 @@ class ApiService {
   // ── Restoran sozlamalari: услуга% / chegирма% ──────────────────────
   async getRestaurantSettings(): Promise<{
     name: string;
+    serviceChargeEnabled: boolean;
     serviceChargePercent: number;
     discountPercent: number;
     currency: string;
@@ -1470,7 +1484,8 @@ class ApiService {
     const data = await this.request<any>('/api/restaurant/settings');
     const d = data.data || {};
     return {
-      name: d.name || '',
+      name: d.branchName || d.name || '',
+      serviceChargeEnabled: d.serviceChargeEnabled === true,
       serviceChargePercent: Number(d.serviceChargePercent || 0),
       discountPercent: Number(d.discountPercent || 0),
       currency: d.currency || 'KZT',
@@ -1478,9 +1493,14 @@ class ApiService {
   }
 
   async updateRestaurantSettings(body: {
+    serviceChargeEnabled?: boolean;
     serviceChargePercent?: number;
     discountPercent?: number;
-  }): Promise<{ serviceChargePercent: number; discountPercent: number }> {
+  }): Promise<{
+    serviceChargeEnabled: boolean;
+    serviceChargePercent: number;
+    discountPercent: number;
+  }> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const data = await this.request<any>('/api/restaurant/settings', {
       method: 'PUT',
@@ -1488,6 +1508,7 @@ class ApiService {
     });
     const d = data.data || {};
     return {
+      serviceChargeEnabled: d.serviceChargeEnabled === true,
       serviceChargePercent: Number(d.serviceChargePercent || 0),
       discountPercent: Number(d.discountPercent || 0),
     };

@@ -45,7 +45,7 @@ export function SettingsScreen({ ctx }: { ctx: ScreenCtx }) {
       .then((s) => {
         if (!alive) return;
         setSvcPct(String(s.serviceChargePercent ?? 0));
-        setSvcEnabled(Number(s.serviceChargePercent ?? 0) > 0);
+        setSvcEnabled(s.serviceChargeEnabled === true);
         setDiscPct(String(s.discountPercent ?? 0));
         setChgLoaded(true);
       })
@@ -55,23 +55,32 @@ export function SettingsScreen({ ctx }: { ctx: ScreenCtx }) {
     };
   }, []);
 
-  const saveCharges = async () => {
+  // enabledArg berilsa — toggle DARHOL backendga saqlaydi (alohida tugma
+  // kutmasdan). Shu sabab "ВЫКЛ qilib chiqsam qaytib yoqiladi" yo'qoladi.
+  const saveCharges = async (enabledArg?: boolean) => {
+    const enabled = enabledArg === undefined ? svcEnabled : enabledArg;
     setChgSaving(true);
     setChgMsg(null);
     try {
       const sv = Math.max(0, Math.min(100, Number(svcPct) || 0));
       const di = Math.max(0, Math.min(100, Number(discPct) || 0));
-      // #1: toggle o'chiq bo'lsa — backendga 0 yuboriladi (chek/hisobotda
-      // qo'shilmaydi). % qiymati inputda saqlanadi (qayta yoqilsa tiklanadi).
+      // FILIAL sozlamasi: serviceChargeEnabled (on/off) + foiz har doim
+      // saqlanadi. Backend (global) shu asosda order'larga услуга qo'shadi.
       const r = await api.updateRestaurantSettings({
-        serviceChargePercent: svcEnabled ? sv : 0,
+        serviceChargeEnabled: enabled,
+        serviceChargePercent: sv,
         discountPercent: di,
       });
-      setSvcEnabled(Number(r.serviceChargePercent) > 0);
-      if (Number(r.serviceChargePercent) > 0) setSvcPct(String(r.serviceChargePercent));
+      setSvcEnabled(r.serviceChargeEnabled === true);
+      setSvcPct(String(r.serviceChargePercent));
       setDiscPct(String(r.discountPercent));
       setChgMsg('Сохранено ✓');
     } catch (e) {
+      // Xato bo'lsa — server holatini qayta tortib UI yolg'on ko'rsatmasin
+      try {
+        const s = await api.getRestaurantSettings();
+        setSvcEnabled(s.serviceChargeEnabled === true);
+      } catch { /* ignore */ }
       setChgMsg(e instanceof Error ? e.message : 'Ошибка сохранения');
     } finally {
       setChgSaving(false);
@@ -301,8 +310,13 @@ export function SettingsScreen({ ctx }: { ctx: ScreenCtx }) {
             изменить в самом заказе.
           </div>
           <button
-            onClick={() => setSvcEnabled((v) => !v)}
-            disabled={!chgLoaded}
+            onClick={() => {
+              if (chgSaving || !chgLoaded) return;
+              const next = !svcEnabled;
+              setSvcEnabled(next); // optimistik
+              saveCharges(next); // DARHOL backendga saqlaymiz
+            }}
+            disabled={!chgLoaded || chgSaving}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -396,7 +410,7 @@ export function SettingsScreen({ ctx }: { ctx: ScreenCtx }) {
               {chgMsg}
             </div>
           )}
-          <Btn onClick={saveCharges} fullWidth height={48} disabled={chgSaving || !chgLoaded}>
+          <Btn onClick={() => saveCharges()} fullWidth height={48} disabled={chgSaving || !chgLoaded}>
             {chgSaving ? 'Сохранение…' : 'Сохранить услугу и скидку'}
           </Btn>
 

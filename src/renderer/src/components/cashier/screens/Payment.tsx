@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { Order, PaymentType, PaymentSplit } from '@/types';
+import { api } from '@/services/api';
 import { T, NavIcon, fmt, fmtN } from '@/lib/theme';
 import { Pager, CTA } from '../shell';
 import { ScreenCtx } from './types';
@@ -29,6 +30,9 @@ export function PaymentScreen({ ctx }: { ctx: ScreenCtx }) {
   // #15: наличные — «Получено» (введённая клиентом сумма) + «Сдача»
   const [received, setReceived] = useState<number | null>(null);
   const [padBuf, setPadBuf] = useState<string | null>(null); // null = пэд скрыт
+  // #2: shu order uchun chegирма tugmasi (backendga PATCH → qayta hisob)
+  const [discOpen, setDiscOpen] = useState(false);
+  const [chgBusy, setChgBusy] = useState(false);
 
   const allItems = useMemo(
     () => (order ? order.items.filter((i) => i.status !== 'cancelled' && !i.isDeleted) : []),
@@ -61,6 +65,7 @@ export function PaymentScreen({ ctx }: { ctx: ScreenCtx }) {
   useEffect(() => {
     if (!order) ctx.go('orders');
   }, [order, ctx]);
+
   if (!order) return null;
 
   const allPaid = unpaidItems.length === 0;
@@ -71,12 +76,13 @@ export function PaymentScreen({ ctx }: { ctx: ScreenCtx }) {
   const subtotal = itemsToPay.reduce((s, i) => s + itemLineTotal(i), 0);
   const { hours, charge } = calcHourly(order);
   const hourly = mode === 'full' ? charge : 0;
-  // #1/#2: услуга% / chegирма% — order'dan (backend bilan AYNAN bir xil
-  // formula). Faqat to'liq to'lovda; default 0 → grandTotal=subtotal+hourly.
-  const _svcPct = Number((order as { serviceChargePercent?: number }).serviceChargePercent || 0);
-  const _discPct = Number((order as { discountPercent?: number }).discountPercent || 0);
-  const serviceFee = mode === 'full' && _svcPct > 0 ? Math.round(subtotal * (_svcPct / 100)) : 0;
-  const discountAmt = mode === 'full' && _discPct > 0 ? Math.round(subtotal * (_discPct / 100)) : 0;
+  // #1/#2: услуга/chegирма — GLOBAL backend hisoblaydi. POS foiz
+  // HISOBLAMAYDI — backend bergan summalarni ko'rsatadi (admin panel,
+  // chek bilan AYNAN bir xil). subtotal jonli (soatlik) qoladi.
+  const svcPct = Number((order as { serviceChargePercent?: number }).serviceChargePercent || 0);
+  const discPct = Number((order as { discountPercent?: number }).discountPercent || 0);
+  const serviceFee = mode === 'full' ? Number((order as { serviceCharge?: number }).serviceCharge || 0) : 0;
+  const discountAmt = mode === 'full' ? Number((order as { discount?: number }).discount || 0) : 0;
   const grandTotal = subtotal + hourly + serviceFee - discountAmt;
   const paidTotal = paidItems.reduce((s, i) => s + itemLineTotal(i), 0);
 
@@ -451,6 +457,36 @@ export function PaymentScreen({ ctx }: { ctx: ScreenCtx }) {
                 <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmt(hourly)}</span>
               </div>
             )}
+            {serviceFee > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 16, color: T.textMuted }}>
+                <span>Услуга{svcPct > 0 ? ` (${svcPct}%)` : ''}</span>
+                <span style={{ fontVariantNumeric: 'tabular-nums' }}>+{fmt(serviceFee)}</span>
+              </div>
+            )}
+            {discountAmt > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 16, color: T.ready, fontWeight: 700 }}>
+                <span>Скидка{discPct > 0 ? ` (${discPct}%)` : ''}</span>
+                <span style={{ fontVariantNumeric: 'tabular-nums' }}>-{fmt(discountAmt)}</span>
+              </div>
+            )}
+            {mode === 'full' && (
+              <button
+                onClick={() => !chgBusy && setDiscOpen(true)}
+                style={{
+                  marginTop: 4,
+                  height: 40,
+                  background: discountAmt > 0 ? T.ready : T.panel,
+                  color: discountAmt > 0 ? '#fff' : T.text,
+                  border: `1px solid ${discountAmt > 0 ? T.ready : T.borderStrong}`,
+                  fontFamily: T.font,
+                  fontSize: 14,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                }}
+              >
+                {discountAmt > 0 ? `Скидка ${discPct}% — изменить` : '+ Добавить скидку'}
+              </button>
+            )}
             <div
               style={{
                 display: 'flex',
@@ -808,6 +844,91 @@ export function PaymentScreen({ ctx }: { ctx: ScreenCtx }) {
           </CTA>
         </div>
       </div>
+
+      {discOpen && (
+        <div
+          onClick={() => !chgBusy && setDiscOpen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 60,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: T.surface,
+              border: `1px solid ${T.border}`,
+              padding: 24,
+              width: 460,
+              maxWidth: '90%',
+            }}
+          >
+            <div style={{ fontSize: 20, fontWeight: 900, color: T.text, marginBottom: 4 }}>
+              Скидка на заказ
+            </div>
+            <div style={{ fontSize: 14, color: T.textMuted, marginBottom: 18 }}>
+              {order.tableName} · сохраняется на сервере (виден в чеке и админке)
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+              {[0, 5, 10, 15, 20, 25, 30, 50].map((p) => {
+                const active = discPct === p;
+                return (
+                  <button
+                    key={p}
+                    disabled={chgBusy}
+                    onClick={async () => {
+                      setChgBusy(true);
+                      try {
+                        await api.setOrderDiscount(order._id, p);
+                        await ctx.reload();
+                        setDiscOpen(false);
+                      } catch {
+                        alert('Не удалось применить скидку');
+                      } finally {
+                        setChgBusy(false);
+                      }
+                    }}
+                    style={{
+                      height: 64,
+                      background: active ? T.ready : T.panel,
+                      color: active ? '#fff' : T.text,
+                      border: `2px solid ${active ? T.ready : T.border}`,
+                      fontFamily: T.font,
+                      fontSize: 20,
+                      fontWeight: 900,
+                      cursor: chgBusy ? 'wait' : 'pointer',
+                    }}
+                  >
+                    {p === 0 ? 'Нет' : `${p}%`}
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              onClick={() => !chgBusy && setDiscOpen(false)}
+              style={{
+                marginTop: 18,
+                width: '100%',
+                height: 52,
+                background: T.panel,
+                color: T.text,
+                border: `1px solid ${T.border}`,
+                fontFamily: T.font,
+                fontSize: 16,
+                fontWeight: 800,
+                cursor: 'pointer',
+              }}
+            >
+              Закрыть
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
