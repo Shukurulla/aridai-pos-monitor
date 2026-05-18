@@ -17,7 +17,9 @@ export function ShiftCloseScreen({ ctx }: { ctx: ScreenCtx }) {
 
   const close = async () => {
     if (!activeShift?._id) {
-      alert('Активная смена не найдена');
+      // Aktiv смена yo'q — yangi смена ochish ekraniga o'tamiz (qayta ochish)
+      ctx.onShiftChanged(null);
+      ctx.go('shiftOpen');
       return;
     }
     if (!confirm('Закрыть смену? Это действие необратимо.')) return;
@@ -27,7 +29,15 @@ export function ShiftCloseScreen({ ctx }: { ctx: ScreenCtx }) {
       ctx.onShiftChanged(null);
       ctx.go('shiftOpen');
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Не удалось закрыть смену');
+      const msg = e instanceof Error ? e.message : '';
+      // Смена allaqachon yopilgan (boshqa terminal / scheduler / takroriy bosish)
+      // → bu xato emas: holatni tozalab, "ochish" ekraniga o'tamiz.
+      if (/не найдена|not found|NOT_FOUND/i.test(msg)) {
+        ctx.onShiftChanged(null);
+        ctx.go('shiftOpen');
+      } else {
+        alert(msg || 'Не удалось закрыть смену');
+      }
     } finally {
       setBusy(false);
     }

@@ -93,6 +93,20 @@ export function OrderDetailScreen({ ctx }: { ctx: ScreenCtx }) {
             }}
           >
             <span>{order.orderType === 'saboy' ? 'Сабой' : order.tableName}</span>
+            {order.orderType !== 'saboy' && order.tableCategoryTitle ? (
+              <span
+                style={{
+                  fontSize: 14,
+                  fontWeight: 800,
+                  color: T.cta,
+                  background: T.cta + '18',
+                  padding: '4px 12px',
+                  borderRadius: 8,
+                }}
+              >
+                {order.tableCategoryTitle}
+              </span>
+            ) : null}
             <span style={{ fontSize: 18, color: T.textMuted, fontWeight: 600 }}>{order.isOffline ? 'Офлайн' : `№${order.orderNumber}`}</span>
             {order.orderType === 'saboy' && (
               <span

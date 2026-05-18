@@ -149,6 +149,25 @@ function mapBackendOrderToDashboard(rawOrder: any): Order {
     saboyNumber: o.saboyNumber || o.orderNumber,
     tableNumber,
     tableName: isSaboy ? 'Сабой' : tableName,
+    tableId:
+      (tableId && typeof tableId === 'object' ? tableId._id : tableId) || '',
+    tableCategoryTitle: isSaboy
+      ? ''
+      : (tableId && typeof tableId === 'object'
+          ? (tableId.categoryId && typeof tableId.categoryId === 'object'
+              ? tableId.categoryId.title
+              : null) || tableId.categoryTitle || ''
+          : '') ||
+        (() => {
+          try {
+            const id =
+              tableId && typeof tableId === 'object' ? tableId._id : tableId;
+            const m = JSON.parse(localStorage.getItem('tableCatMap') || '{}');
+            return id && m[id] ? String(m[id]) : '';
+          } catch {
+            return '';
+          }
+        })(),
     items,
     status: isCancelled ? 'cancelled' : (isPaid ? 'paid' : 'active'),
     paymentStatus: isPaid ? 'paid' : 'pending',
@@ -208,6 +227,30 @@ function resolveTableName(order: any): string {
   }
   if (order?.tableNumber) return `Стол ${order.tableNumber}`;
   return 'Неизвестный стол';
+}
+
+// Stol kategoriyasi (этаж) nomi — order kartochkasida bir xil raqamli
+// stollarni (1-этаж/2-этаж) farqlash uchun. tableId populate bo'lsa o'shandan,
+// aks holda /api/tables keshi (localStorage 'tableCatMap') orqali.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function resolveTableCategory(order: any): string {
+  const t = order?.tableId;
+  if (t && typeof t === 'object') {
+    const c = t.categoryId;
+    if (c && typeof c === 'object' && c.title) return String(c.title);
+    if (t.categoryTitle) return String(t.categoryTitle);
+  }
+  if (order?.tableCategoryTitle) return String(order.tableCategoryTitle);
+  const id = typeof t === 'string' ? t : t?._id;
+  if (id) {
+    try {
+      const m = JSON.parse(localStorage.getItem('tableCatMap') || '{}');
+      if (m[id]) return String(m[id]);
+    } catch {
+      /* ignore */
+    }
+  }
+  return '';
 }
 
 class ApiService {
@@ -882,8 +925,15 @@ class ApiService {
     // nomi shu yerdan aniqlanadi ("Неизвестный стол" o'rniga).
     try {
       const m: Record<string, string> = {};
-      for (const t of mapped) m[t._id] = t.title;
+      const cat: Record<string, string> = {};
+      for (const t of mapped) {
+        m[t._id] = t.title;
+        if (t.categoryTitle) cat[t._id] = t.categoryTitle;
+      }
       localStorage.setItem('tablesMap', JSON.stringify(m));
+      // Stol kategoriyasi (этаж) keshi — order kartochkasida "Стол 1"
+      // qaysi etajdaligini ko'rsatish uchun (bir xil raqamli stollar farqlanadi).
+      localStorage.setItem('tableCatMap', JSON.stringify(cat));
     } catch {
       /* ignore */
     }
@@ -1075,7 +1125,11 @@ class ApiService {
   async getActiveShift(): Promise<Shift | null> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const data = await this.request<any>('/api/shifts/active');
-    return data.data || null;
+    const shift = data.data || null;
+    // Himoya: yopilgan смена hech qachon "aktiv" deb qaytmasin (eski
+    // mirror/stale javob "Активная смена не найдена" xatosini keltirib chiqaradi).
+    if (shift && shift.status && shift.status !== 'active') return null;
+    return shift;
   }
 
   // Открытие смены

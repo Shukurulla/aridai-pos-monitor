@@ -21,7 +21,9 @@ export function ShiftOpenScreen({ ctx }: { ctx: ScreenCtx }) {
     try {
       const shift = await api.openShift(amount, notes || undefined);
       ctx.onShiftChanged(shift);
-      await ctx.reload();
+      // Yangi смена id'sini uzatamiz — loadData getActiveShift'ni
+      // (stale bo'lishi mumkin) chaqirmasdan to'g'ri смена orderlarini oladi.
+      await ctx.reload(shift?._id);
       ctx.go('orders');
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Не удалось открыть смену');

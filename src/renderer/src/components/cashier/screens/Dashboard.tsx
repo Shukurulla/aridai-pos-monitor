@@ -50,6 +50,7 @@ function OrderCard({
   isSelected,
   selectionIndex,
   onToggleSelect,
+  online,
 }: {
   order: Order;
   onOpen: () => void;
@@ -60,6 +61,7 @@ function OrderCard({
   isSelected: boolean;
   selectionIndex: number;
   onToggleSelect: () => void;
+  online: boolean;
 }) {
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -143,6 +145,22 @@ function OrderCard({
           <div style={{ fontSize: 19, fontWeight: 800, lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {order.orderType === 'saboy' ? 'Сабой' : order.tableName}
           </div>
+          {order.orderType !== 'saboy' && order.tableCategoryTitle ? (
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 800,
+                color: T.cta,
+                background: T.cta + '18',
+                padding: '3px 8px',
+                borderRadius: 6,
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+              }}
+            >
+              {order.tableCategoryTitle}
+            </span>
+          ) : null}
           <StatusPill status={sk} size="sm" />
         </div>
         <div style={{ fontSize: 12, color: T.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -189,7 +207,7 @@ function OrderCard({
           >
             <NavIcon kind="printer" size={17} /> Чек
           </button>
-          {!isPaid && !isCancelled && (
+          {!isPaid && !isCancelled && !online && (
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -627,6 +645,7 @@ export function DashboardScreen({ ctx }: { ctx: ScreenCtx }) {
               isSelected={selected.includes(o._id)}
               selectionIndex={selected.indexOf(o._id)}
               onToggleSelect={() => toggleMerge(o._id)}
+              online={ctx.posOnline}
             />
           ))}
           {visible.length === 0 && (

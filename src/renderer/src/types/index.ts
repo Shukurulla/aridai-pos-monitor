@@ -92,6 +92,8 @@ export interface Order {
   tableId?: string;
   tableNumber: number;
   tableName: string;
+  // Stol kategoriyasi (этаж) nomi — bir xil raqamli stollarni farqlash uchun
+  tableCategoryTitle?: string;
   items: OrderItem[];
   status: 'active' | 'paid' | 'cancelled';
   paymentStatus: 'pending' | 'paid';

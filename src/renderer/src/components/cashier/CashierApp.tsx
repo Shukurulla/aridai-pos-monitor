@@ -114,6 +114,9 @@ export function CashierApp() {
   const lastShiftIdRef = useRef<string | undefined>(undefined);
   const [shiftLoaded, setShiftLoaded] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
+  // POS rejimi (mode-detector): 'online' bo'lsa VPS ulanган, 'offline' bo'lsa
+  // local-server. 'unknown'/online'ni online deb hisoblaymiz (default xavfsiz).
+  const [posOnline, setPosOnline] = useState(true);
 
   const [screen, setScreenState] = useState<Screen>('orders');
   const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
@@ -191,8 +194,15 @@ export function CashierApp() {
         try {
           const shiftData = await api.getActiveShift();
           currentShiftId = shiftData?._id;
-          if (shiftData) setActiveShift(shiftData);
+          // MUHIM: server muvaffaqiyatli javob berdi — bu AVTORITATIV holat.
+          // Aktiv смена bo'lsa — o'rnatamiz; bo'lmasa (null) — TOZALAYMIZ.
+          // Avval faqat truthy bo'lsa o'rnatardi, hech qachon tozalamasdi →
+          // yopilgan смена xotirada qolib, "qayta ochish"da Закрыть bosilganda
+          // backend "Активная смена не найдена" (404) qaytarardi.
+          setActiveShift(shiftData || null);
         } catch (e) {
+          // Faqat XATO (offline/noma'lum) bo'lsa — eski holatni saqlab qolamiz
+          // (online'da flicker bo'lmasligi uchun). Tozalamaymiz.
           console.warn('[loadData] getActiveShift xato (offline?), davom etamiz:', e);
         } finally {
           setShiftLoaded(true);
@@ -336,6 +346,11 @@ export function CashierApp() {
       setSummary(EMPTY_SUMMARY);
     });
     socket.on('shift:updated', (data) => {
+      // Yopilgan смена'ni aktiv qilib qo'ymaymiz (aks holda Закрыть → 404)
+      if (data.shift && data.shift.status && data.shift.status !== 'active') {
+        setActiveShift(null);
+        return;
+      }
       if (data.shift) setActiveShift(data.shift);
     });
 
@@ -431,6 +446,35 @@ export function CashierApp() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // POS online/offline rejimini kuzatish (order kartochkasida "Детали"
+  // tugamasini online'da yashirish uchun). mode-detector → window.pos.mode.
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w = typeof window !== 'undefined' ? (window as any).pos : null;
+    if (!w?.mode) return;
+    let off: (() => void) | undefined;
+    const apply = (m: unknown) => {
+      // get() → { mode, cashierUrl }; onChange → 'online'|'offline'|'unknown'
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const val = typeof m === 'string' ? m : (m as any)?.mode;
+      // Faqat aniq 'offline' bo'lsa offline; aks holda online (xavfsiz default).
+      setPosOnline(val !== 'offline');
+    };
+    try {
+      Promise.resolve(w.mode.get?.()).then(apply).catch(() => {});
+      off = w.mode.onChange?.(apply);
+    } catch {
+      /* ignore */
+    }
+    return () => {
+      try {
+        off?.();
+      } catch {
+        /* ignore */
+      }
+    };
+  }, []);
 
   // Офлайн-изменения НЕ приходят через socket.io VPS (их там ещё нет).
   // Поэтому:
@@ -744,6 +788,7 @@ export function CashierApp() {
     restaurant,
     branch,
     isConnected,
+    posOnline,
     currentOrder,
     setCurrentOrderId,
     mergeSelection,

@@ -11,6 +11,9 @@ export interface ScreenCtx {
   restaurant: Restaurant | null;
   branch: Branch | null;
   isConnected: boolean;
+  // POS rejimi: VPS bilan online'mi (true) yoki offline (local-server)mi.
+  // Online'da order kartochkasida "Детали" tugmasi ko'rsatilmaydi.
+  posOnline: boolean;
 
   // Current order context (detail / payment / addItems)
   currentOrder: Order | null;
@@ -21,7 +24,7 @@ export interface ScreenCtx {
   setMergeSelection: (ids: string[]) => void;
 
   // Data + actions
-  reload: () => Promise<void>;
+  reload: (shiftId?: string) => Promise<void>;
   onPay: (
     orderId: string,
     paymentType: PaymentType,
