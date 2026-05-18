@@ -52,6 +52,7 @@ function OrderCard({
   onToggleSelect,
   online,
   category,
+  branchSvc,
 }: {
   order: Order;
   onOpen: () => void;
@@ -64,6 +65,7 @@ function OrderCard({
   onToggleSelect: () => void;
   online: boolean;
   category: string;
+  branchSvc: { en: boolean; pct: number; disc: number };
 }) {
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -91,7 +93,23 @@ function OrderCard({
   const unpaidSubtotal = unpaidItems.reduce((s, i) => s + itemAmount(i), 0);
   const activeItemsTotal = activeItems.reduce((s, i) => s + itemAmount(i), 0);
   const hourly = isPaid ? order.hourlyCharge || 0 : calculateHourlyCharge(order).charge;
-  const grandTotal = isPaid ? activeItemsTotal + (order.hourlyCharge || 0) : unpaidSubtotal + hourly;
+  // услуга/chegirma — order'da % bo'lsa o'sha, bo'lmasa FILIAL sozlamasi
+  // (xizmat yoqilishidan oldin yaratilgan order'larga ham qo'shilsin).
+  // To'lov ekrani / chek bilan AYNAN bir xil mantiq — divergensiya yo'q.
+  const _base = isPaid ? activeItemsTotal : unpaidSubtotal;
+  const _oSvc = Number(order.serviceCharge || 0);
+  const _oSvcP = Number(order.serviceChargePercent || 0);
+  const _oDisc = Number(order.discount || 0);
+  const _oDiscP = Number(order.discountPercent || 0);
+  const _svcPct = _oSvcP > 0 ? _oSvcP : branchSvc.en ? branchSvc.pct : 0;
+  const _discPct = _oDiscP > 0 ? _oDiscP : branchSvc.disc > 0 ? branchSvc.disc : 0;
+  const _svcFee = _oSvc > 0 ? _oSvc : _svcPct > 0 ? Math.round(_base * (_svcPct / 100)) : 0;
+  const _discAmt = _oDisc > 0 ? _oDisc : _discPct > 0 ? Math.round(_base * (_discPct / 100)) : 0;
+  const grandTotal = isPaid
+    ? order.grandTotal && order.grandTotal > 0
+      ? order.grandTotal
+      : activeItemsTotal + (order.hourlyCharge || 0) + _svcFee - _discAmt
+    : unpaidSubtotal + hourly + _svcFee - _discAmt;
 
   const canMerge = !isPaid && !isCancelled;
   const itemCount = activeItems.reduce((s, i) => s + (i.quantity || 1), 0);
@@ -649,6 +667,7 @@ export function DashboardScreen({ ctx }: { ctx: ScreenCtx }) {
               onToggleSelect={() => toggleMerge(o._id)}
               online={ctx.posOnline}
               category={ctx.tableCategory(o)}
+              branchSvc={ctx.branchSvc}
             />
           ))}
           {visible.length === 0 && (

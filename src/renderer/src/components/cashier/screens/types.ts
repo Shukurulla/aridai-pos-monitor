@@ -14,6 +14,9 @@ export interface ScreenCtx {
   // POS rejimi: VPS bilan online'mi (true) yoki offline (local-server)mi.
   // Online'da order kartochkasida "Детали" tugmasi ko'rsatilmaydi.
   posOnline: boolean;
+  // Filial услуга/chegirma sozlamasi (GLOBAL backend = manba). Kartochka,
+  // to'lov, chek — hammasi shu bitta manbadan hisoblaydi (divergensiya yo'q).
+  branchSvc: { en: boolean; pct: number; disc: number };
   // Order stoli kategoriyasi (этаж) nomi — tableId yoki tableName bo'yicha.
   tableCategory: (o: { tableId?: string; tableName?: string; orderType?: string }) => string;
 

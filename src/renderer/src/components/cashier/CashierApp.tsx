@@ -895,6 +895,7 @@ export function CashierApp() {
     branch,
     isConnected,
     posOnline,
+    branchSvc: brSvc,
     tableCategory: (o) => {
       if (!o || o.orderType === 'saboy' || o.orderType === 'takeaway') return '';
       const byId = o.tableId ? tableCatById[o.tableId] : '';
