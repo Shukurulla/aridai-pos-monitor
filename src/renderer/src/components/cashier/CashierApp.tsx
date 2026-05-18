@@ -117,6 +117,11 @@ export function CashierApp() {
   // POS rejimi (mode-detector): 'online' bo'lsa VPS ulanган, 'offline' bo'lsa
   // local-server. 'unknown'/online'ni online deb hisoblaymiz (default xavfsiz).
   const [posOnline, setPosOnline] = useState(true);
+  // Stol kategoriyasi (этаж): tableId → nom, va nom (Стол 10) → этаж.
+  // Order'da kategoriya kelmaydi (getOrders populate qilmaydi) — shuning
+  // uchun /api/tables'dan jonli xarita tuzamiz va render paytida hal qilamiz.
+  const [tableCatById, setTableCatById] = useState<Record<string, string>>({});
+  const [tableCatByName, setTableCatByName] = useState<Record<string, string>>({});
 
   const [screen, setScreenState] = useState<Screen>('orders');
   const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
@@ -248,9 +253,24 @@ export function CashierApp() {
         .getDailySummary(currentShiftId)
         .then((s) => setSummary(s))
         .catch((e) => console.warn('[loadData] getDailySummary xato (offline?):', e));
-      // Stol nomlari keshini issitamiz (Dashboard'da "Неизвестный стол"
-      // chiqmasligi uchun) — natijasi/xatosi muhim emas.
-      api.getTables().catch(() => []);
+      // Stol nomlari + kategoriya (этаж) keshini issitamiz. Order'da
+      // kategoriya bo'lmaydi — shuning uchun bu yerda jonli xarita tuzamiz
+      // (tableId VA nom bo'yicha — moslashuvchan).
+      api
+        .getTables()
+        .then((tbls) => {
+          const byId: Record<string, string> = {};
+          const byName: Record<string, string> = {};
+          for (const t of tbls || []) {
+            if (t.categoryTitle) {
+              if (t._id) byId[t._id] = t.categoryTitle;
+              if (t.title) byName[t.title] = t.categoryTitle;
+            }
+          }
+          setTableCatById(byId);
+          setTableCatByName(byName);
+        })
+        .catch(() => []);
     } catch (error) {
       console.error('Failed to load data:', error);
       setShiftLoaded(true);
@@ -789,6 +809,16 @@ export function CashierApp() {
     branch,
     isConnected,
     posOnline,
+    tableCategory: (o) => {
+      if (!o || o.orderType === 'saboy' || o.orderType === 'takeaway') return '';
+      const byId = o.tableId ? tableCatById[o.tableId] : '';
+      if (byId) return byId;
+      const byName = o.tableName ? tableCatByName[o.tableName] : '';
+      if (byName) return byName;
+      // Transform paytida saqlangan zaxira
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (o as any).tableCategoryTitle || '';
+    },
     currentOrder,
     setCurrentOrderId,
     mergeSelection,

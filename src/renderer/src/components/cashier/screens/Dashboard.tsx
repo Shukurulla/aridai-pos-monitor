@@ -51,6 +51,7 @@ function OrderCard({
   selectionIndex,
   onToggleSelect,
   online,
+  category,
 }: {
   order: Order;
   onOpen: () => void;
@@ -62,6 +63,7 @@ function OrderCard({
   selectionIndex: number;
   onToggleSelect: () => void;
   online: boolean;
+  category: string;
 }) {
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -145,7 +147,7 @@ function OrderCard({
           <div style={{ fontSize: 19, fontWeight: 800, lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {order.orderType === 'saboy' ? 'Сабой' : order.tableName}
           </div>
-          {order.orderType !== 'saboy' && order.tableCategoryTitle ? (
+          {category ? (
             <span
               style={{
                 fontSize: 11,
@@ -158,7 +160,7 @@ function OrderCard({
                 flexShrink: 0,
               }}
             >
-              {order.tableCategoryTitle}
+              {category}
             </span>
           ) : null}
           <StatusPill status={sk} size="sm" />
@@ -646,6 +648,7 @@ export function DashboardScreen({ ctx }: { ctx: ScreenCtx }) {
               selectionIndex={selected.indexOf(o._id)}
               onToggleSelect={() => toggleMerge(o._id)}
               online={ctx.posOnline}
+              category={ctx.tableCategory(o)}
             />
           ))}
           {visible.length === 0 && (

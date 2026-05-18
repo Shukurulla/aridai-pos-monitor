@@ -14,6 +14,8 @@ export interface ScreenCtx {
   // POS rejimi: VPS bilan online'mi (true) yoki offline (local-server)mi.
   // Online'da order kartochkasida "Детали" tugmasi ko'rsatilmaydi.
   posOnline: boolean;
+  // Order stoli kategoriyasi (этаж) nomi — tableId yoki tableName bo'yicha.
+  tableCategory: (o: { tableId?: string; tableName?: string; orderType?: string }) => string;
 
   // Current order context (detail / payment / addItems)
   currentOrder: Order | null;
