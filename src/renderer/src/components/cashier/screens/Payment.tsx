@@ -106,10 +106,18 @@ export function PaymentScreen({ ctx }: { ctx: ScreenCtx }) {
   const oDiscPct = Number((order as { discountPercent?: number }).discountPercent || 0);
   const oSvc = Number((order as { serviceCharge?: number }).serviceCharge || 0);
   const oDisc = Number((order as { discount?: number }).discount || 0);
-  const svcPct = oSvcPct > 0 ? oSvcPct : brSvcEn ? brSvcPct : 0;
+  // Услуга = STOL XIZMATI → saboy/takeaway uchun UMUMAN yo'q (backend bilan bir xil).
+  const isDineIn = order.orderType !== 'saboy' && order.orderType !== 'takeaway';
+  const svcPct = !isDineIn ? 0 : oSvcPct > 0 ? oSvcPct : brSvcEn ? brSvcPct : 0;
   const discPct = oDiscPct > 0 ? oDiscPct : brDiscPct;
   const serviceFee =
-    mode !== 'full' ? 0 : oSvc > 0 ? oSvc : svcPct > 0 ? Math.round(subtotal * (svcPct / 100)) : 0;
+    mode !== 'full' || !isDineIn
+      ? 0
+      : oSvc > 0
+        ? oSvc
+        : svcPct > 0
+          ? Math.round(subtotal * (svcPct / 100))
+          : 0;
   const discountAmt =
     mode !== 'full' ? 0 : oDisc > 0 ? oDisc : discPct > 0 ? Math.round(subtotal * (discPct / 100)) : 0;
   const grandTotal = subtotal + hourly + serviceFee - discountAmt;

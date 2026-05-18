@@ -101,9 +101,11 @@ function OrderCard({
   const _oSvcP = Number(order.serviceChargePercent || 0);
   const _oDisc = Number(order.discount || 0);
   const _oDiscP = Number(order.discountPercent || 0);
-  const _svcPct = _oSvcP > 0 ? _oSvcP : branchSvc.en ? branchSvc.pct : 0;
+  // Услуга = STOL XIZMATI → saboy/takeaway uchun UMUMAN yo'q (backend bilan bir xil).
+  const _isDineIn = order.orderType !== 'saboy' && order.orderType !== 'takeaway';
+  const _svcPct = !_isDineIn ? 0 : _oSvcP > 0 ? _oSvcP : branchSvc.en ? branchSvc.pct : 0;
   const _discPct = _oDiscP > 0 ? _oDiscP : branchSvc.disc > 0 ? branchSvc.disc : 0;
-  const _svcFee = _oSvc > 0 ? _oSvc : _svcPct > 0 ? Math.round(_base * (_svcPct / 100)) : 0;
+  const _svcFee = !_isDineIn ? 0 : _oSvc > 0 ? _oSvc : _svcPct > 0 ? Math.round(_base * (_svcPct / 100)) : 0;
   const _discAmt = _oDisc > 0 ? _oDisc : _discPct > 0 ? Math.round(_base * (_discPct / 100)) : 0;
   const grandTotal = isPaid
     ? order.grandTotal && order.grandTotal > 0

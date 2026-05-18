@@ -82,12 +82,19 @@ async function printOrderReceipt(
   const oSvcP = Number((order as { serviceChargePercent?: number }).serviceChargePercent || 0);
   const oDisc = Number((order as { discount?: number }).discount || 0);
   const oDiscP = Number((order as { discountPercent?: number }).discountPercent || 0);
-  const eSvcP = oSvcP > 0 ? oSvcP : br.en ? br.pct : 0;
+  // Услуга = STOL XIZMATI → saboy/takeaway uchun UMUMAN yo'q (backend bilan bir xil).
+  const isDineIn = order.orderType !== 'saboy' && order.orderType !== 'takeaway';
+  const eSvcP = !isDineIn ? 0 : oSvcP > 0 ? oSvcP : br.en ? br.pct : 0;
   const eDiscP = oDiscP > 0 ? oDiscP : br.disc > 0 ? br.disc : 0;
   const _svcP = eSvcP;
   const _discP = eDiscP;
-  const _svcFee =
-    isFullyPaid && oSvc > 0 ? oSvc : eSvcP > 0 ? Math.round(printSubtotal * (eSvcP / 100)) : 0;
+  const _svcFee = !isDineIn
+    ? 0
+    : isFullyPaid && oSvc > 0
+      ? oSvc
+      : eSvcP > 0
+        ? Math.round(printSubtotal * (eSvcP / 100))
+        : 0;
   const _discAmt =
     isFullyPaid && oDisc > 0 ? oDisc : eDiscP > 0 ? Math.round(printSubtotal * (eDiscP / 100)) : 0;
   try {
@@ -500,7 +507,12 @@ export function CashierApp() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const _lo = localOrder as any;
       const _br = brSvcRef.current;
-      const _svcP = Number(_lo?.serviceChargePercent || 0) || (_br.en ? _br.pct : 0);
+      // Услуга = STOL XIZMATI → saboy/takeaway uchun yo'q (backend bilan bir xil).
+      const _ot = _lo?.orderType || data?.orderType;
+      const _isDineIn = _ot !== 'saboy' && _ot !== 'takeaway';
+      const _svcP = !_isDineIn
+        ? 0
+        : Number(_lo?.serviceChargePercent || 0) || (_br.en ? _br.pct : 0);
       const _discP = Number(_lo?.discountPercent || 0) || (_br.disc > 0 ? _br.disc : 0);
       const _svcFee = _svcP > 0 ? Math.round(subtotal * (_svcP / 100)) : 0;
       const _discAmt = _discP > 0 ? Math.round(subtotal * (_discP / 100)) : 0;
@@ -743,7 +755,11 @@ export function CashierApp() {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const _o = o as any;
           const _br = brSvcRef.current;
-          const _svcP = Number(_o?.serviceChargePercent || 0) || (_br.en ? _br.pct : 0);
+          // Услуга = STOL XIZMATI → saboy/takeaway uchun yo'q (backend bilan bir xil).
+          const _isDineIn = _o?.orderType !== 'saboy' && _o?.orderType !== 'takeaway';
+          const _svcP = !_isDineIn
+            ? 0
+            : Number(_o?.serviceChargePercent || 0) || (_br.en ? _br.pct : 0);
           const _discP = Number(_o?.discountPercent || 0) || (_br.disc > 0 ? _br.disc : 0);
           const _svcFee = _svcP > 0 ? Math.round(ppSub * (_svcP / 100)) : 0;
           const _discAmt = _discP > 0 ? Math.round(ppSub * (_discP / 100)) : 0;
