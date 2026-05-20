@@ -188,6 +188,12 @@ function OrderCard({
         <div style={{ fontSize: 12, color: T.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {order.isOffline ? 'Офлайн' : `№${order.orderNumber}`} · {order.waiter?.name || '—'} · {itemCount} блюд
         </div>
+        {/* Order ID qisqartmasi — debug/transparency uchun. Kart har order
+            o'zining ID si bilan ko'rinadi; "fantom" eski orderlar aniq
+            farqlanadi (foydalanuvchi talabi). */}
+        <div style={{ fontSize: 10, color: T.textMuted, opacity: 0.7, fontFamily: 'monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          ID: {order._id ? String(order._id).slice(-8) : '—'}
+        </div>
         {fmtDT(order.createdAt) && (
           <div style={{ fontSize: 11, color: T.textMuted, marginTop: 1, fontVariantNumeric: 'tabular-nums' }}>
             {fmtDT(order.createdAt)}

@@ -85,6 +85,10 @@ export const PrinterAPI = {
         docType: paymentData.docType || 'payment',
         restaurantName: paymentData.restaurantName,
         tableName: paymentData.tableName,
+        // Zakaz raqami + _id — chekda aniq order ko'rsatish uchun
+        // (foydalanuvchi talabi: har chek o'z zakazi bilan, chalkashlik yo'q).
+        orderNumber: paymentData.orderNumber,
+        orderId: paymentData.orderId,
         waiterName: paymentData.waiterName,
         items: paymentData.items.map(item => ({
           foodName: item.name,
